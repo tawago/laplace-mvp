@@ -11,12 +11,17 @@ import {
   Building2,
   Calendar,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Shield,
+  Copy
 } from 'lucide-react';
 import { TokenPurchase } from '@/types/hotel';
+import { useAuth } from '@/contexts/auth-context';
+import { toast } from 'sonner';
 
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<TokenPurchase[]>([]);
+  const { user } = useAuth();
   
   useEffect(() => {
     // Mock portfolio data - in real app, this would come from blockchain/API
@@ -57,15 +62,54 @@ export default function PortfolioPage() {
   const estimatedAnnualReturn = portfolio.reduce((sum, p) => sum + (p.totalPrice * p.estimatedROI / 100), 0);
   const currentValue = totalInvested * 1.05; // Mock 5% appreciation
 
+  const copyAddress = () => {
+    if (user) {
+      navigator.clipboard.writeText(user.wallet.address);
+      toast.success('Wallet address copied!');
+    }
+  };
+
+  const formatAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
       {/* Page Header */}
       <div className="border-b bg-white dark:bg-zinc-950">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-          <h1 className="text-3xl font-bold tracking-tight">My Portfolio</h1>
-          <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-            Track your tokenized hotel investments
-          </p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">My Portfolio</h1>
+              <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+                Track your tokenized hotel investments
+              </p>
+            </div>
+            
+            {user && (
+              <Card className="w-full sm:w-auto">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-emerald-500">
+                      <Shield className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs text-zinc-500">Smart Account</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-sm">{formatAddress(user.wallet.address)}</p>
+                        <button
+                          onClick={copyAddress}
+                          className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
 

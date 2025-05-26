@@ -1,11 +1,16 @@
+'use client';
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Building2, Shield, TrendingUp, Users } from 'lucide-react';
+import { ArrowRight, Building2, Shield, TrendingUp, Users, Sparkles } from 'lucide-react';
 import { hotels } from '@/data/hotels';
+import { useAuth } from '@/contexts/auth-context';
 
 export default function HomePage() {
+  const { user } = useAuth();
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white dark:from-zinc-950 dark:to-zinc-900">
       {/* Hero Section - Mobile First */}
@@ -13,9 +18,16 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-transparent to-emerald-600/10" />
         <div className="relative mx-auto max-w-7xl">
           <div className="text-center">
-            <Badge className="mb-4 px-3 py-1" variant="secondary">
-              Blockchain-Powered Real Estate
-            </Badge>
+            {user ? (
+              <Badge className="mb-4 px-3 py-1" variant="default">
+                <Sparkles className="mr-1 h-3 w-3" />
+                Welcome back, {user.name.split(' ')[0]}!
+              </Badge>
+            ) : (
+              <Badge className="mb-4 px-3 py-1" variant="secondary">
+                Blockchain-Powered Real Estate
+              </Badge>
+            )}
             <h1 className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-5xl md:text-6xl lg:text-7xl">
               Own Premium Hotels
               <span className="block bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">

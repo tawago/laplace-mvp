@@ -3,10 +3,16 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { LoginDialog } from '@/components/login-dialog';
+import { WalletDropdown } from '@/components/wallet-dropdown';
 import { Menu, X, Wallet } from 'lucide-react';
+import { useAuth } from '@/contexts/auth-context';
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:bg-zinc-950/95 dark:supports-[backdrop-filter]:bg-zinc-950/60">
@@ -31,21 +37,28 @@ export function Header() {
         </nav>
 
         {/* Desktop CTA */}
-        <div className="hidden md:flex md:items-center md:space-x-4">
-          <Button variant="outline" size="sm">
-            <Wallet className="mr-2 h-4 w-4" />
-            Connect Wallet
-          </Button>
+        <div className="hidden md:flex md:items-center md:space-x-2">
+          <ThemeToggle />
+          {user ? (
+            <WalletDropdown />
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setIsLoginOpen(true)}>
+              <Wallet className="mr-2 h-4 w-4" />
+              Connect Wallet
+            </Button>
+          )}
         </div>
 
         {/* Mobile menu button */}
-        <button
-          className="md:hidden"
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
-          aria-label="Toggle menu"
-        >
-          {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+        <div className="flex items-center gap-2 md:hidden">
+          <ThemeToggle />
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Navigation */}
@@ -74,14 +87,21 @@ export function Header() {
               About
             </Link>
             <div className="pt-4">
-              <Button className="w-full" variant="outline" size="sm">
-                <Wallet className="mr-2 h-4 w-4" />
-                Connect Wallet
-              </Button>
+              {user ? (
+                <WalletDropdown />
+              ) : (
+                <Button className="w-full" variant="outline" size="sm" onClick={() => setIsLoginOpen(true)}>
+                  <Wallet className="mr-2 h-4 w-4" />
+                  Connect Wallet
+                </Button>
+              )}
             </div>
           </nav>
         </div>
       )}
+
+      {/* Login Dialog */}
+      <LoginDialog open={isLoginOpen} onOpenChange={setIsLoginOpen} />
     </header>
   );
 }
