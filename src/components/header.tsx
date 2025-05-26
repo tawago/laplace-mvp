@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LoginDialog } from '@/components/login-dialog';
-import { WalletDropdown } from '@/components/wallet-dropdown';
+import { UserMenu } from '@/components/user-menu';
 import { Menu, X, Wallet } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -53,7 +53,7 @@ export function Header() {
         <div className="hidden md:flex md:items-center md:space-x-2">
           <ThemeToggle />
           {user ? (
-            <WalletDropdown />
+            <UserMenu />
           ) : (
             <Button variant="outline" size="sm" onClick={() => setIsLoginOpen(true)}>
               <Wallet className="mr-2 h-4 w-4" />
@@ -65,6 +65,14 @@ export function Header() {
         {/* Mobile menu button */}
         <div className="flex items-center gap-2 md:hidden">
           <ThemeToggle />
+          {user ? (
+            <UserMenu />
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setIsLoginOpen(true)}>
+              <Wallet className="mr-2 h-4 w-4" />
+              Connect
+            </Button>
+          )}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             aria-label="Toggle menu"
@@ -113,16 +121,6 @@ export function Header() {
             >
               About
             </Link>
-            <div className="pt-4">
-              {user ? (
-                <WalletDropdown />
-              ) : (
-                <Button className="w-full" variant="outline" size="sm" onClick={() => setIsLoginOpen(true)}>
-                  <Wallet className="mr-2 h-4 w-4" />
-                  Connect Wallet
-                </Button>
-              )}
-            </div>
           </nav>
         </div>
       )}
