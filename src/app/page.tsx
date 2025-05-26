@@ -9,6 +9,7 @@ import { hotels } from '@/data/hotels';
 import { useAuth } from '@/contexts/auth-context';
 import { NewsSection } from '@/components/news-section';
 import { HotelImage } from '@/components/hotel-image';
+import { LuxuryCanvasBackground } from '@/components/luxury-canvas-background';
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white dark:from-zinc-950 dark:to-zinc-900">
       {/* Hero Section - Mobile First */}
       <section className="relative overflow-hidden px-4 py-16 sm:px-6 sm:py-24 lg:px-8 lg:py-32">
+        <LuxuryCanvasBackground />
         <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-transparent to-emerald-600/10" />
         <div className="relative mx-auto max-w-7xl">
           <div className="text-center">
