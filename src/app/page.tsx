@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Building2, Shield, TrendingUp, Users, Sparkles } from 'lucide-react';
 import { hotels } from '@/data/hotels';
 import { useAuth } from '@/contexts/auth-context';
+import { NewsSection } from '@/components/news-section';
+import { HotelImage } from '@/components/hotel-image';
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -50,6 +52,30 @@ export default function HomePage() {
                   Learn More
                 </Button>
               </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trust Indicators Section */}
+      <section className="border-y bg-white dark:bg-zinc-950">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 gap-8 text-center md:grid-cols-4">
+            <div>
+              <p className="text-3xl font-bold text-blue-600 sm:text-4xl">RM 100B</p>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">M-WEZ Investment Target</p>
+            </div>
+            <div>
+              <p className="text-3xl font-bold text-emerald-600 sm:text-4xl">12+ Years</p>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Market Experience</p>
+            </div>
+            <div>
+              <p className="text-3xl font-bold text-purple-600 sm:text-4xl">5 Countries</p>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Global Presence</p>
+            </div>
+            <div>
+              <p className="text-3xl font-bold text-orange-600 sm:text-4xl">Zero Debt</p>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Financial Stability</p>
             </div>
           </div>
         </div>
@@ -125,10 +151,12 @@ export default function HomePage() {
           <div className="mt-12 grid gap-8 lg:grid-cols-2">
             {hotels.map((hotel) => (
               <Card key={hotel.id} className="group overflow-hidden transition-all hover:shadow-xl">
-                <div className="aspect-[16/9] overflow-hidden bg-zinc-200 dark:bg-zinc-800">
-                  <div className="flex h-full items-center justify-center">
-                    <Building2 className="h-16 w-16 text-zinc-400" />
-                  </div>
+                <div className="relative aspect-[16/9] overflow-hidden">
+                  <HotelImage 
+                    src={hotel.thumbnail} 
+                    alt={hotel.name}
+                    className="group-hover:scale-105 transition-transform duration-300"
+                  />
                 </div>
                 <CardContent className="p-6">
                   <div className="mb-4 flex items-start justify-between">
@@ -168,6 +196,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* News Section */}
+      <NewsSection />
 
       {/* CTA Section */}
       <section className="px-4 py-16 sm:px-6 sm:py-24 lg:px-8">

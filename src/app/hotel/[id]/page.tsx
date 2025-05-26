@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ImageGallery } from '@/components/image-gallery';
+import { HotelImage } from '@/components/hotel-image';
 import { toast } from 'sonner';
 import { 
   Building2, 
@@ -60,10 +62,13 @@ export default function HotelPage() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
       {/* Hero Section */}
-      <div className="relative h-[40vh] min-h-[300px] bg-zinc-200 dark:bg-zinc-800 md:h-[50vh]">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Building2 className="h-24 w-24 text-zinc-400" />
-        </div>
+      <div className="relative h-[40vh] min-h-[300px] overflow-hidden md:h-[50vh]">
+        <HotelImage 
+          src={hotel.thumbnail} 
+          alt={hotel.name}
+          className="brightness-75"
+          fallbackClassName="bg-zinc-200 dark:bg-zinc-800"
+        />
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <Badge className="mb-2">{hotel.location}, {hotel.country}</Badge>
@@ -101,8 +106,9 @@ export default function HotelPage() {
       {/* Main Content */}
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         <Tabs defaultValue="overview" className="space-y-8">
-          <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+          <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="gallery">Gallery</TabsTrigger>
             <TabsTrigger value="units">Units</TabsTrigger>
             <TabsTrigger value="faq">FAQ</TabsTrigger>
           </TabsList>
@@ -161,6 +167,15 @@ export default function HotelPage() {
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="gallery" className="space-y-4">
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="mb-6 text-xl font-bold">Property Gallery</h2>
+                <ImageGallery images={hotel.images} hotelName={hotel.name} />
               </CardContent>
             </Card>
           </TabsContent>

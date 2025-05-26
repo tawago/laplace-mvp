@@ -15,6 +15,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { hotels } from '@/data/hotels';
+import { HotelImage } from '@/components/hotel-image';
 
 export default function DiscoverPage() {
   const [selectedROI, setSelectedROI] = useState<string>('all');
@@ -108,10 +109,13 @@ export default function DiscoverPage() {
             return (
               <Card key={hotel.id} className="group overflow-hidden transition-all hover:shadow-xl">
                 <CardHeader className="p-0">
-                  <div className="aspect-[16/10] overflow-hidden bg-zinc-200 dark:bg-zinc-800">
-                    <div className="flex h-full items-center justify-center">
-                      <Building2 className="h-12 w-12 text-zinc-400" />
-                    </div>
+                  <div className="relative aspect-[16/10] overflow-hidden">
+                    <HotelImage 
+                      src={hotel.thumbnail} 
+                      alt={hotel.name}
+                      className="group-hover:scale-105 transition-transform duration-300"
+                      fallbackClassName="h-12 w-12"
+                    />
                   </div>
                 </CardHeader>
                 <CardContent className="p-6">

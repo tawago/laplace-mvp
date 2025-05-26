@@ -8,7 +8,8 @@ import {
   Shield, 
   Award,
   FileText,
-  Download
+  Download,
+  Check
 } from 'lucide-react';
 
 export default function AboutPage() {
@@ -103,6 +104,64 @@ export default function AboutPage() {
                   </p>
                 </CardContent>
               </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Why Malaysia Section */}
+      <section className="border-t px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="text-center">
+            <Badge className="mb-4" variant="secondary">
+              Investment Destination
+            </Badge>
+            <h2 className="mb-6 text-2xl font-bold">Why Malaysia?</h2>
+          </div>
+
+          <div className="mt-8 grid gap-8 lg:grid-cols-2">
+            <div>
+              <h3 className="mb-4 text-lg font-semibold">Strategic Location & Growth</h3>
+              <ul className="space-y-3 text-zinc-600 dark:text-zinc-400">
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>Southeast Asia's strategic hub with excellent connectivity</span>
+                </li>
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>Stable political environment and strong legal framework</span>
+                </li>
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>Growing tourism sector with 26 million visitors annually</span>
+                </li>
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>English-speaking nation with multicultural society</span>
+                </li>
+              </ul>
+            </div>
+            
+            <div>
+              <h3 className="mb-4 text-lg font-semibold">Investment Advantages</h3>
+              <ul className="space-y-3 text-zinc-600 dark:text-zinc-400">
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>No capital gains tax for property investments</span>
+                </li>
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>Foreign ownership allowed for properties above RM 1 million</span>
+                </li>
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>MM2H program for long-term residency</span>
+                </li>
+                <li className="flex items-start">
+                  <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
+                  <span>Currency stability and low inflation rate</span>
+                </li>
+              </ul>
             </div>
           </div>
         </div>

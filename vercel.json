@@ -1,0 +1,9 @@
+{
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm build",
+  "devCommand": "pnpm dev",
+  "framework": "nextjs",
+  "settings": {
+    "nodeVersion": "20.x"
+  }
+}
