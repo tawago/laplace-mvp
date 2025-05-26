@@ -477,7 +477,7 @@ export default function BookingsPage() {
 
         {/* Booking Dialog */}
         <Dialog open={showBookingDialog} onOpenChange={setShowBookingDialog}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>New Booking Request</DialogTitle>
               <DialogDescription>
@@ -509,26 +509,76 @@ export default function BookingsPage() {
               </div>
 
               {/* Date Selection */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Check-in Date</label>
-                  <Calendar
-                    mode="single"
-                    selected={checkInDate}
-                    onSelect={setCheckInDate}
-                    disabled={(date) => date < new Date()}
-                    className="rounded-md border"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Check-out Date</label>
-                  <Calendar
-                    mode="single"
-                    selected={checkOutDate}
-                    onSelect={setCheckOutDate}
-                    disabled={(date) => !checkInDate || date <= checkInDate}
-                    className="rounded-md border"
-                  />
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Check-in Date</label>
+                    <div className="flex justify-center">
+                      <Calendar
+                        mode="single"
+                        selected={checkInDate}
+                        onSelect={setCheckInDate}
+                        disabled={(date) => date < new Date()}
+                        className="rounded-md border"
+                        classNames={{
+                          months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
+                          month: "space-y-4",
+                          caption: "flex justify-center pt-1 relative items-center",
+                          caption_label: "text-sm font-medium",
+                          nav: "space-x-1 flex items-center",
+                          nav_button: "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
+                          nav_button_previous: "absolute left-1",
+                          nav_button_next: "absolute right-1",
+                          table: "w-full border-collapse space-y-1",
+                          head_row: "flex",
+                          head_cell: "text-zinc-500 rounded-md w-8 font-normal text-[0.8rem]",
+                          row: "flex w-full mt-2",
+                          cell: "text-center text-sm relative p-0 focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-zinc-100 [&:has([aria-selected].day-outside)]:bg-zinc-100/50 [&:has([aria-selected])]:rounded-md",
+                          day: "h-8 w-8 p-0 font-normal aria-selected:opacity-100 hover:bg-zinc-100 hover:rounded-md",
+                          day_selected: "bg-zinc-900 text-zinc-50 hover:bg-zinc-900 hover:text-zinc-50 focus:bg-zinc-900 focus:text-zinc-50",
+                          day_today: "bg-zinc-100 text-zinc-900",
+                          day_outside: "text-zinc-500 opacity-50",
+                          day_disabled: "text-zinc-500 opacity-50",
+                          day_range_middle: "aria-selected:bg-zinc-100 aria-selected:text-zinc-900",
+                          day_hidden: "invisible",
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Check-out Date</label>
+                    <div className="flex justify-center">
+                      <Calendar
+                        mode="single"
+                        selected={checkOutDate}
+                        onSelect={setCheckOutDate}
+                        disabled={(date) => !checkInDate || date <= checkInDate}
+                        className="rounded-md border"
+                        classNames={{
+                          months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
+                          month: "space-y-4",
+                          caption: "flex justify-center pt-1 relative items-center",
+                          caption_label: "text-sm font-medium",
+                          nav: "space-x-1 flex items-center",
+                          nav_button: "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
+                          nav_button_previous: "absolute left-1",
+                          nav_button_next: "absolute right-1",
+                          table: "w-full border-collapse space-y-1",
+                          head_row: "flex",
+                          head_cell: "text-zinc-500 rounded-md w-8 font-normal text-[0.8rem]",
+                          row: "flex w-full mt-2",
+                          cell: "text-center text-sm relative p-0 focus-within:relative focus-within:z-20 [&:has([aria-selected])]:bg-zinc-100 [&:has([aria-selected].day-outside)]:bg-zinc-100/50 [&:has([aria-selected])]:rounded-md",
+                          day: "h-8 w-8 p-0 font-normal aria-selected:opacity-100 hover:bg-zinc-100 hover:rounded-md",
+                          day_selected: "bg-zinc-900 text-zinc-50 hover:bg-zinc-900 hover:text-zinc-50 focus:bg-zinc-900 focus:text-zinc-50",
+                          day_today: "bg-zinc-100 text-zinc-900",
+                          day_outside: "text-zinc-500 opacity-50",
+                          day_disabled: "text-zinc-500 opacity-50",
+                          day_range_middle: "aria-selected:bg-zinc-100 aria-selected:text-zinc-900",
+                          day_hidden: "invisible",
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
