@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 
 export function Footer() {
   return (
@@ -8,7 +9,13 @@ export function Footer() {
           {/* Brand */}
           <div>
             <Link href="/" className="flex items-center space-x-2">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-emerald-600" />
+              <Image 
+                src="/images/logo.png" 
+                alt="Sheng Tai International" 
+                width={32} 
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
               <span className="text-xl font-bold">Sheng Tai International</span>
             </Link>
             <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
