@@ -19,8 +19,10 @@ import {
   Home,
   Maximize,
   Eye,
-  Check
+  Check,
+  Info
 } from 'lucide-react';
+import Link from 'next/link';
 import { hotels } from '@/data/hotels';
 import { HotelUnit } from '@/types/hotel';
 
@@ -224,13 +226,21 @@ export default function HotelPage() {
                               </div>
                             </td>
                             <td className="py-4">
-                              <Button 
-                                size="sm" 
-                                onClick={() => handleUnitSelect(unit)}
-                                disabled={unit.availableTokens === 0}
-                              >
-                                Buy Tokens
-                              </Button>
+                              <div className="flex gap-2">
+                                <Link href={`/hotel/${hotel.id}/unit/${unit.id}`}>
+                                  <Button size="sm" variant="outline">
+                                    <Info className="mr-1 h-3 w-3" />
+                                    Details
+                                  </Button>
+                                </Link>
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handleUnitSelect(unit)}
+                                  disabled={unit.availableTokens === 0}
+                                >
+                                  Buy Tokens
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         );
