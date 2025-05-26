@@ -34,6 +34,7 @@ import {
 import { hotels } from '@/data/hotels';
 import { useAuth } from '@/contexts/auth-context';
 import { LoginDialog } from '@/components/login-dialog';
+import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
 import { toast } from 'sonner';
 
 export default function UnitDetailPage() {
@@ -47,6 +48,7 @@ export default function UnitDetailPage() {
   const [investmentYears, setInvestmentYears] = useState(5);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [purchaseAmount, setPurchaseAmount] = useState(100);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   if (!hotel || !unit) {
     return <div>Unit not found</div>;
@@ -80,12 +82,19 @@ export default function UnitDetailPage() {
       return;
     }
 
-    // Proceed with purchase
+    // Show confirmation dialog
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmPurchase = () => {
+    // This will be called by the confirmation dialog
+    // The success toast and redirect will be handled by onSuccess
+  };
+
+  const handlePurchaseSuccess = () => {
     toast.success('Purchase successful!', {
       description: `You've purchased ${purchaseAmount} tokens for ${unit.name}`,
     });
-    
-    // In real app, would redirect to checkout or process payment
     router.push('/portfolio');
   };
 
@@ -565,6 +574,21 @@ export default function UnitDetailPage() {
 
       {/* Login Dialog */}
       <LoginDialog open={showLoginDialog} onOpenChange={setShowLoginDialog} />
+
+      {/* Purchase Confirmation Dialog */}
+      <PurchaseConfirmationDialog
+        open={showConfirmDialog}
+        onOpenChange={setShowConfirmDialog}
+        hotelName={hotel.name}
+        unitName={unit.name}
+        unitType={unit.type}
+        tokenAmount={purchaseAmount}
+        tokenPrice={tokenPrice}
+        totalPrice={purchaseTotal}
+        roiPercentage={hotel.roiPercentage}
+        onConfirm={handleConfirmPurchase}
+        onSuccess={handlePurchaseSuccess}
+      />
     </div>
   );
 }

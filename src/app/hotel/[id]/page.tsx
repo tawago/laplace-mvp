@@ -7,10 +7,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ImageGallery } from '@/components/image-gallery';
 import { HotelImage } from '@/components/hotel-image';
+import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
+import { useAuth } from '@/contexts/auth-context';
+import { LoginDialog } from '@/components/login-dialog';
 import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 import { 
   TrendingUp, 
   Shield, 
@@ -28,12 +31,15 @@ import { HotelUnit } from '@/types/hotel';
 
 export default function HotelPage() {
   const params = useParams();
+  const router = useRouter();
+  const { user } = useAuth();
   const hotel = hotels.find(h => h.id === params.id);
   
   const [selectedUnit, setSelectedUnit] = useState<HotelUnit | null>(null);
   const [tokenAmount, setTokenAmount] = useState(100);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   if (!hotel) {
     return <div>Hotel not found</div>;
@@ -46,15 +52,26 @@ export default function HotelPage() {
   };
 
   const handleCheckout = () => {
+    if (!user) {
+      setIsSheetOpen(false);
+      setShowLoginDialog(true);
+      return;
+    }
+    
     setIsSheetOpen(false);
-    setIsCheckoutOpen(true);
+    setShowConfirmDialog(true);
   };
 
   const handleConfirmPurchase = () => {
-    setIsCheckoutOpen(false);
+    // This will be called by the confirmation dialog
+    // The old checkout dialog is no longer needed
+  };
+
+  const handlePurchaseSuccess = () => {
     toast.success('Token purchase confirmed!', {
-      description: `You&apos;ve successfully purchased ${tokenAmount} tokens for ${selectedUnit?.name}.`,
+      description: `You've successfully purchased ${tokenAmount} tokens for ${selectedUnit?.name}.`,
     });
+    router.push('/portfolio');
   };
 
   const subtotal = selectedUnit ? tokenAmount * hotel.tokenPrice : 0;
@@ -372,53 +389,25 @@ export default function HotelPage() {
         </SheetContent>
       </Sheet>
 
-      {/* Checkout Dialog */}
-      <Dialog open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Purchase</DialogTitle>
-            <DialogDescription>
-              Review your token purchase details
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedUnit && (
-            <div className="space-y-4">
-              <div className="rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800">
-                <h3 className="font-semibold">{hotel.name}</h3>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  {selectedUnit.name} - Type {selectedUnit.type}
-                </p>
-              </div>
+      {/* Login Dialog */}
+      <LoginDialog open={showLoginDialog} onOpenChange={setShowLoginDialog} />
 
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Tokens</span>
-                  <span>{tokenAmount}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Price per Token</span>
-                  <span>${hotel.tokenPrice}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2 font-semibold">
-                  <span>Total Amount</span>
-                  <span>${subtotal.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/20">
-                <p className="text-sm">
-                  <strong>Expected Annual Return:</strong> ${(subtotal * hotel.roiPercentage / 100).toFixed(2)}
-                </p>
-              </div>
-
-              <Button className="w-full" onClick={handleConfirmPurchase}>
-                Confirm Purchase
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Purchase Confirmation Dialog */}
+      {selectedUnit && (
+        <PurchaseConfirmationDialog
+          open={showConfirmDialog}
+          onOpenChange={setShowConfirmDialog}
+          hotelName={hotel.name}
+          unitName={selectedUnit.name}
+          unitType={selectedUnit.type}
+          tokenAmount={tokenAmount}
+          tokenPrice={hotel.tokenPrice}
+          totalPrice={subtotal}
+          roiPercentage={hotel.roiPercentage}
+          onConfirm={handleConfirmPurchase}
+          onSuccess={handlePurchaseSuccess}
+        />
+      )}
     </div>
   );
 }
