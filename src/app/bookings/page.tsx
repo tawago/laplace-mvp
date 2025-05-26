@@ -35,7 +35,6 @@ import {
   Coins,
   Calendar as CalendarIcon,
 } from 'lucide-react';
-import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
 import { hotels } from '@/data/hotels';
 
@@ -61,8 +60,6 @@ interface TokenHolding {
 }
 
 export default function BookingsPage() {
-  const { user } = useAuth();
-  console.log('User for booking page:', user?.id); // User verification for AuthGuard
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [tokenHoldings, setTokenHoldings] = useState<TokenHolding[]>([]);
   const [showBookingDialog, setShowBookingDialog] = useState(false);
@@ -71,7 +68,7 @@ export default function BookingsPage() {
   const [checkOutDate, setCheckOutDate] = useState<Date>();
   const [guests, setGuests] = useState(2);
   const [bookingsThisYear, setBookingsThisYear] = useState(1);
-  
+
   const remainingBookings = 3 - bookingsThisYear;
 
   useEffect(() => {
@@ -130,7 +127,7 @@ export default function BookingsPage() {
 
     const selectedHotelData = hotels.find(h => h.id === selectedHotel);
     const holding = tokenHoldings.find(h => h.hotelId === selectedHotel);
-    
+
     if (!holding || holding.tokens < 10) {
       toast.error('You need at least 10 tokens to make a reservation');
       return;
@@ -153,7 +150,7 @@ export default function BookingsPage() {
     setBookings(prev => [newBooking, ...prev]);
     setBookingsThisYear(prev => prev + 1);
     setShowBookingDialog(false);
-    
+
     // Reset form
     setSelectedHotel('');
     setCheckInDate(undefined);
@@ -179,8 +176,8 @@ export default function BookingsPage() {
   };
 
   const formatDateRange = (checkIn: Date, checkOut: Date) => {
-    const options: Intl.DateTimeFormatOptions = { 
-      month: 'short', 
+    const options: Intl.DateTimeFormatOptions = {
+      month: 'short',
       day: 'numeric',
       year: checkIn.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
     };
@@ -204,8 +201,8 @@ export default function BookingsPage() {
                   Reserve your stays using your token holder benefits
                 </p>
               </div>
-              
-              <Button 
+
+              <Button
                 onClick={() => setShowBookingDialog(true)}
                 disabled={remainingBookings <= 0}
               >
@@ -234,7 +231,7 @@ export default function BookingsPage() {
                   {bookingsThisYear} of 3 used this year
                 </p>
                 <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                  <div 
+                  <div
                     className="h-full bg-blue-500"
                     style={{ width: `${(bookingsThisYear / 3) * 100}%` }}
                   />
@@ -622,7 +619,7 @@ export default function BookingsPage() {
               <Button variant="outline" onClick={() => setShowBookingDialog(false)}>
                 Cancel
               </Button>
-              <Button 
+              <Button
                 onClick={handleBookingSubmit}
                 disabled={!checkInDate || !checkOutDate || !selectedHotel || remainingBookings <= 0}
               >
