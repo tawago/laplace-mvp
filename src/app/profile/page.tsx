@@ -8,13 +8,13 @@ import { Shield, Mail, User, Copy, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { AuthGuard } from '@/components/auth-guard';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
   const router = useRouter();
 
   if (!user) {
-    router.push('/');
     return null;
   }
 
@@ -30,7 +30,8 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
+    <AuthGuard>
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         <h1 className="mb-8 text-3xl font-bold">Profile Settings</h1>
 
@@ -143,5 +144,6 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
+    </AuthGuard>
   );
 }

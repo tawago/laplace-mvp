@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { 
   TrendingUp, 
@@ -13,11 +13,13 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Shield,
-  Copy
+  Copy,
+  ChevronRight
 } from 'lucide-react';
 import { TokenPurchase } from '@/types/hotel';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
+import { AuthGuard } from '@/components/auth-guard';
 
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<TokenPurchase[]>([]);
@@ -74,7 +76,8 @@ export default function PortfolioPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
+    <AuthGuard>
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
       {/* Page Header */}
       <div className="border-b bg-white dark:bg-zinc-950">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
@@ -194,7 +197,7 @@ export default function PortfolioPage() {
                     <th className="pb-3 text-left font-medium">Tokens</th>
                     <th className="pb-3 text-left font-medium">Investment</th>
                     <th className="pb-3 text-left font-medium">Current Value</th>
-                    <th className="pb-3 text-left font-medium">Status</th>
+                    <th className="pb-3 text-left font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -231,9 +234,12 @@ export default function PortfolioPage() {
                           </div>
                         </td>
                         <td className="py-4">
-                          <Badge variant="secondary" className="capitalize">
-                            {purchase.status}
-                          </Badge>
+                          <Link href={`/portfolio/${purchase.id}`}>
+                            <Button variant="ghost" size="sm">
+                              View Details
+                              <ChevronRight className="ml-1 h-4 w-4" />
+                            </Button>
+                          </Link>
                         </td>
                       </tr>
                     );
@@ -258,5 +264,6 @@ export default function PortfolioPage() {
         </Card>
       </div>
     </div>
+    </AuthGuard>
   );
 }
