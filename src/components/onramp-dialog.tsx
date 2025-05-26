@@ -14,17 +14,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Loader2,
   CreditCard,
   Building2,
   Smartphone,
   CheckCircle,
-  AlertCircle,
   DollarSign,
   ArrowRight,
-  Copy,
   Clock,
   Shield,
   Coins,
@@ -151,11 +148,6 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
     }
   };
 
-  const copyAddress = () => {
-    const mockAddress = '0x742F35Cc67E07b8D2B0...a9C4D1F3B8E2';
-    navigator.clipboard.writeText(mockAddress);
-    toast.success('Address copied to clipboard');
-  };
 
   return (
     <Dialog open={open} onOpenChange={step === 'processing' ? undefined : onOpenChange}>
@@ -210,7 +202,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Coins className="h-5 w-5 text-blue-600" />
-                    <span className="font-medium">You'll receive</span>
+                    <span className="font-medium">You&apos;ll receive</span>
                   </div>
                   <div className="text-2xl font-bold text-blue-600">
                     ≈ {usdcAmount.toFixed(2)} USDC
@@ -224,7 +216,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
               <Alert>
                 <Shield className="h-4 w-4" />
                 <AlertDescription>
-                  Your funds will be converted to USDC, the platform's native currency for investments.
+                  Your funds will be converted to USDC, the platform&apos;s native currency for investments.
                 </AlertDescription>
               </Alert>
             </div>
@@ -246,7 +238,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
             <DialogHeader>
               <DialogTitle>Choose Payment Method</DialogTitle>
               <DialogDescription>
-                Select how you'd like to fund your deposit
+                Select how you&apos;d like to fund your deposit
               </DialogDescription>
             </DialogHeader>
 
@@ -307,7 +299,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
                       <span>${total.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-blue-600">
-                      <span>You'll receive</span>
+                      <span>You&apos;ll receive</span>
                       <span>{usdcAmount.toFixed(2)} USDC</span>
                     </div>
                   </CardContent>

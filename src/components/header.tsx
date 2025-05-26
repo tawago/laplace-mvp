@@ -38,6 +38,9 @@ export function Header() {
           <Link href="/portfolio" className="text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300">
             Portfolio
           </Link>
+          <Link href="/wallet" className="text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300">
+            Wallet
+          </Link>
           <Link href="/about" className="text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300">
             About
           </Link>
@@ -85,6 +88,13 @@ export function Header() {
               onClick={() => setIsMenuOpen(false)}
             >
               Portfolio
+            </Link>
+            <Link
+              href="/wallet"
+              className="block rounded-lg px-3 py-2 text-base font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Wallet
             </Link>
             <Link
               href="/about"
