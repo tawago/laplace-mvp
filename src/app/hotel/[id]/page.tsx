@@ -284,16 +284,17 @@ export default function HotelPage() {
 
       {/* Unit Purchase Sheet */}
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Purchase Tokens</SheetTitle>
-            <SheetDescription>
-              Select the number of tokens you want to purchase
-            </SheetDescription>
-          </SheetHeader>
+        <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-md">
+          <div className="p-6">
+            <SheetHeader className="mb-6">
+              <SheetTitle>Purchase Tokens</SheetTitle>
+              <SheetDescription>
+                Select the number of tokens you want to purchase
+              </SheetDescription>
+            </SheetHeader>
           
           {selectedUnit && (
-            <div className="mt-6 space-y-6">
+            <div className="space-y-6">
               <div className="rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800">
                 <h3 className="font-semibold">{selectedUnit.name}</h3>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
@@ -357,6 +358,7 @@ export default function HotelPage() {
               </Button>
             </div>
           )}
+          </div>
         </SheetContent>
       </Sheet>
 
