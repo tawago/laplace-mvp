@@ -27,7 +27,7 @@ export function Header() {
             height={32}
             className="h-8 w-8 object-contain"
           />
-          <span className="text-xl font-bold">Sheng Tai International</span>
+          <span className="hidden sm:inline text-xl font-bold">Sheng Tai International</span>
         </Link>
 
         {/* Desktop Navigation */}
