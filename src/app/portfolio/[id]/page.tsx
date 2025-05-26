@@ -7,6 +7,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Area,
+  AreaChart,
+} from "recharts";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 import { 
   ArrowLeft,
   DollarSign,
@@ -46,9 +59,9 @@ export default function PortfolioDetailPage() {
       hotelName: 'THE SAIL Hotel Tower',
       unitId: 'sail-a',
       unitType: 'Studio Deluxe',
-      tokenAmount: 500,
-      pricePerToken: 3.40,
-      totalPrice: 1700,
+      tokenAmount: 50,
+      pricePerToken: 100,
+      totalPrice: 5000,
       purchaseDate: new Date('2024-01-15'),
       estimatedROI: 8,
       status: 'confirmed'
@@ -61,28 +74,28 @@ export default function PortfolioDetailPage() {
       {
         id: '1',
         type: 'purchase',
-        amount: -1700,
+        amount: -5000,
         date: new Date('2024-01-15'),
         description: 'Initial token purchase'
       },
       {
         id: '2',
         type: 'dividend',
-        amount: 34,
+        amount: 100,
         date: new Date('2024-03-31'),
         description: 'Q1 2024 Dividend Payment'
       },
       {
         id: '3',
         type: 'dividend',
-        amount: 34,
+        amount: 100,
         date: new Date('2024-06-30'),
         description: 'Q2 2024 Dividend Payment'
       },
       {
         id: '4',
         type: 'dividend',
-        amount: 34,
+        amount: 100,
         date: new Date('2024-09-30'),
         description: 'Q3 2024 Dividend Payment'
       }
@@ -105,6 +118,41 @@ export default function PortfolioDetailPage() {
   const totalReturn = currentValue - purchase.totalPrice + totalDividends;
   const totalReturnPercentage = (totalReturn / purchase.totalPrice) * 100;
   const annualizedReturn = totalReturnPercentage / ((new Date().getTime() - purchase.purchaseDate.getTime()) / (365 * 24 * 60 * 60 * 1000));
+
+  // Generate chart data
+  const chartData = [];
+  const startDate = new Date(purchase.purchaseDate);
+  const monthsSincePurchase = Math.floor((new Date().getTime() - startDate.getTime()) / (30 * 24 * 60 * 60 * 1000));
+  
+  for (let i = 0; i <= monthsSincePurchase; i++) {
+    const date = new Date(startDate);
+    date.setMonth(date.getMonth() + i);
+    
+    // Calculate value with appreciation
+    const monthlyAppreciation = 0.004; // ~5% annually
+    const appreciatedValue = purchase.totalPrice * Math.pow(1 + monthlyAppreciation, i);
+    
+    // Add dividends every 3 months
+    const dividendsPaid = Math.floor(i / 3) * (purchase.totalPrice * purchase.estimatedROI / 100 / 4);
+    
+    chartData.push({
+      month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      value: Math.round(appreciatedValue),
+      totalReturn: Math.round(appreciatedValue - purchase.totalPrice + dividendsPaid),
+      dividends: Math.round(dividendsPaid),
+    });
+  }
+
+  const chartConfig = {
+    value: {
+      label: "Portfolio Value",
+      color: "hsl(var(--chart-1))",
+    },
+    totalReturn: {
+      label: "Total Return",
+      color: "hsl(var(--chart-2))",
+    },
+  } satisfies ChartConfig;
 
   return (
     <AuthGuard>
@@ -288,15 +336,82 @@ export default function PortfolioDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Performance Chart Placeholder */}
+            {/* Performance Chart */}
             <Card>
               <CardHeader>
                 <CardTitle>Performance Overview</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex h-64 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                  <p className="text-sm text-zinc-500">Performance Chart</p>
-                </div>
+                <ChartContainer config={chartConfig} className="h-[300px] w-full">
+                  <AreaChart
+                    data={chartData}
+                    margin={{
+                      left: 12,
+                      right: 12,
+                    }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={(value) => value.slice(0, 3)}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent />}
+                    />
+                    <defs>
+                      <linearGradient id="fillValue" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stopColor="var(--color-value)"
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="var(--color-value)"
+                          stopOpacity={0.1}
+                        />
+                      </linearGradient>
+                      <linearGradient id="fillTotalReturn" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stopColor="var(--color-totalReturn)"
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="var(--color-totalReturn)"
+                          stopOpacity={0.1}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      dataKey="totalReturn"
+                      type="monotone"
+                      fill="url(#fillTotalReturn)"
+                      fillOpacity={0.4}
+                      stroke="var(--color-totalReturn)"
+                      stackId="a"
+                    />
+                    <Area
+                      dataKey="value"
+                      type="monotone"
+                      fill="url(#fillValue)"
+                      fillOpacity={0.4}
+                      stroke="var(--color-value)"
+                      stackId="a"
+                    />
+                  </AreaChart>
+                </ChartContainer>
               </CardContent>
             </Card>
           </TabsContent>
