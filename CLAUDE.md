@@ -20,7 +20,7 @@ pnpm lint
 
 ## Project Overview
 
-This is a **HotelToken** mock mobile web app - a frontend-only Next.js application showcasing hotel room tokenization for two Malaysian hotels: THE SAIL and NYRA. The app simulates token purchase flows without any backend, wallet integration, or blockchain functionality.
+This is a **Sheng Tai International** mock mobile web app - a frontend-only Next.js application showcasing hotel room tokenization for two Malaysian hotels: THE SAIL and NYRA. The app simulates token purchase flows without any backend, wallet integration, or blockchain functionality.
 
 ## Architecture
 

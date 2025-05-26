@@ -20,7 +20,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
     setSelectedProvider(provider);
     try {
       await login(provider);
-      toast.success('Welcome to HotelToken!', {
+      toast.success('Welcome to Sheng Tai International!', {
         description: 'Your smart wallet has been created successfully.',
       });
       onOpenChange(false);
@@ -37,7 +37,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Welcome to HotelToken</DialogTitle>
+          <DialogTitle>Welcome to Sheng Tai International</DialogTitle>
           <DialogDescription>
             Sign in with your social account. We&apos;ll create a secure wallet for you automatically.
           </DialogDescription>

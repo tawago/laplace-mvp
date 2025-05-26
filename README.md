@@ -1,4 +1,4 @@
-# HotelToken – Mock Mobile Web App (Next.js + Tailwind + shadcn/ui)
+# Sheng Tai International – Mock Mobile Web App (Next.js + Tailwind + shadcn/ui)
 
 > **Objetivo:** Criar um mock navegável (somente front-end) para visualizar o fluxo de tokenização de quartos de dois hotéis: **THE SAIL** e **NYRA** (Malásia). Não haverá backend, lógica de carteira, nem blockchain neste estágio.
 

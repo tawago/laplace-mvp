@@ -20,7 +20,7 @@ export function Header() {
         {/* Logo */}
         <Link href="/" className="flex items-center space-x-2">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-emerald-600" />
-          <span className="text-xl font-bold">HotelToken</span>
+          <span className="text-xl font-bold">Sheng Tai International</span>
         </Link>
 
         {/* Desktop Navigation */}

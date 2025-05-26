@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Check if user is already logged in
-    const storedUser = localStorage.getItem('hoteltoken-user');
+    const storedUser = localStorage.getItem('shengtai-user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
@@ -78,13 +78,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     setUser(newUser);
-    localStorage.setItem('hoteltoken-user', JSON.stringify(newUser));
+    localStorage.setItem('shengtai-user', JSON.stringify(newUser));
     setIsLoading(false);
   };
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('hoteltoken-user');
+    localStorage.removeItem('shengtai-user');
   };
 
   return (

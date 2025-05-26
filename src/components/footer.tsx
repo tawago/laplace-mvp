@@ -9,7 +9,7 @@ export function Footer() {
           <div>
             <Link href="/" className="flex items-center space-x-2">
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-emerald-600" />
-              <span className="text-xl font-bold">HotelToken</span>
+              <span className="text-xl font-bold">Sheng Tai International</span>
             </Link>
             <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
               Tokenized real estate investment platform powered by blockchain technology.
