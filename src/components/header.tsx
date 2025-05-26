@@ -20,14 +20,14 @@ export function Header() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center space-x-2">
-          <Image 
-            src="/images/logo.png" 
-            alt="Sheng Tai International" 
-            width={32} 
+          <Image
+            src="/images/logo.png"
+            alt="Sheng Tai International"
+            width={32}
             height={32}
             className="h-8 w-8 object-contain"
           />
-          <span className="hidden sm:inline text-xl font-bold">Sheng Tai International</span>
+          <span className="text-sm sm:text-xl font-bold">Sheng Tai International</span>
         </Link>
 
         {/* Desktop Navigation */}
