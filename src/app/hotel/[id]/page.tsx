@@ -53,7 +53,7 @@ export default function HotelPage() {
   const handleConfirmPurchase = () => {
     setIsCheckoutOpen(false);
     toast.success('Token purchase confirmed!', {
-      description: `You've successfully purchased ${tokenAmount} tokens for ${selectedUnit?.name}.`,
+      description: `You&apos;ve successfully purchased ${tokenAmount} tokens for ${selectedUnit?.name}.`,
     });
   };
 

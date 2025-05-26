@@ -40,7 +40,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
         <DialogHeader>
           <DialogTitle>Welcome to HotelToken</DialogTitle>
           <DialogDescription>
-            Sign in with your social account. We'll create a secure wallet for you automatically.
+            Sign in with your social account. We&apos;ll create a secure wallet for you automatically.
           </DialogDescription>
         </DialogHeader>
 
