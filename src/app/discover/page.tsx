@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
   ArrowRight, 
-  Building2, 
   MapPin, 
   TrendingUp, 
   Filter,
@@ -19,7 +18,6 @@ import { HotelImage } from '@/components/hotel-image';
 
 export default function DiscoverPage() {
   const [selectedROI, setSelectedROI] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const filteredHotels = hotels.filter(hotel => {

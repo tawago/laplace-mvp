@@ -2,7 +2,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
-  Building2, 
   Globe, 
   Users, 
   Shield, 
@@ -40,13 +39,13 @@ export default function AboutPage() {
             <div>
               <h2 className="mb-6 text-2xl font-bold">Pioneering Tokenized Real Estate</h2>
               <p className="mb-4 text-zinc-600 dark:text-zinc-400">
-                Founded by Dato' Leong Sir Ley, Sheng Tai International has grown from a 
+                Founded by Dato&apos; Leong Sir Ley, Sheng Tai International has grown from a 
                 boutique real estate firm to a global leader in property tokenization. 
                 We specialize in transforming premium hotel assets into accessible investment 
                 opportunities through blockchain technology.
               </p>
               <p className="mb-4 text-zinc-600 dark:text-zinc-400">
-                Our flagship projects, THE SAIL and NYRA in Malaysia's Melaka Waterfront 
+                Our flagship projects, THE SAIL and NYRA in Malaysia&apos;s Melaka Waterfront 
                 Economic Zone, represent the future of real estate investment - combining 
                 guaranteed returns, buyback protection, and the security of blockchain technology.
               </p>
@@ -125,7 +124,7 @@ export default function AboutPage() {
               <ul className="space-y-3 text-zinc-600 dark:text-zinc-400">
                 <li className="flex items-start">
                   <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
-                  <span>Southeast Asia's strategic hub with excellent connectivity</span>
+                  <span>Southeast Asia&apos;s strategic hub with excellent connectivity</span>
                 </li>
                 <li className="flex items-start">
                   <Check className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
@@ -176,7 +175,7 @@ export default function AboutPage() {
             </Badge>
             <h2 className="mb-6 text-2xl font-bold">Melaka Waterfront Economic Zone (M-WEZ)</h2>
             <p className="mx-auto max-w-3xl text-zinc-600 dark:text-zinc-400">
-              Our properties are part of Malaysia's mega-development program targeting 
+              Our properties are part of Malaysia&apos;s mega-development program targeting 
               RM 100 billion in investments and creating 20,000 jobs annually. This government-backed 
               initiative ensures long-term value appreciation and sustainable returns for our investors.
             </p>

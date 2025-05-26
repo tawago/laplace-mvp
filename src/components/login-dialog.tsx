@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Loader2, Chrome, Twitter, Github, Shield, Zap, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -25,7 +24,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
         description: 'Your smart wallet has been created successfully.',
       });
       onOpenChange(false);
-    } catch (error) {
+    } catch {
       toast.error('Login failed', {
         description: 'Please try again later.',
       });

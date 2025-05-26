@@ -12,8 +12,6 @@ import { ImageGallery } from '@/components/image-gallery';
 import { HotelImage } from '@/components/hotel-image';
 import { toast } from 'sonner';
 import { 
-  Building2, 
-  MapPin, 
   TrendingUp, 
   Shield, 
   Calendar,

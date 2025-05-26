@@ -118,7 +118,7 @@ export default function HomePage() {
                 </div>
                 <h3 className="mb-2 font-semibold">Prime Locations</h3>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  Strategic locations in Malaysia's tourism hotspots
+                  Strategic locations in Malaysia&apos;s tourism hotspots
                 </p>
               </CardContent>
             </Card>
@@ -146,7 +146,7 @@ export default function HomePage() {
               Featured Investment Properties
             </h2>
             <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
-              Premium hotels in Malaysia's Melaka Waterfront Economic Zone
+              Premium hotels in Malaysia&apos;s Melaka Waterfront Economic Zone
             </p>
           </div>
 

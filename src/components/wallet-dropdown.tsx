@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -49,10 +50,12 @@ export function WalletDropdown() {
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
           <div className="flex items-center gap-2">
-            <img 
+            <Image 
               src={user.picture} 
               alt={user.name}
-              className="h-5 w-5 rounded-full"
+              width={20}
+              height={20}
+              className="rounded-full"
             />
             <span className="hidden sm:inline">{formatAddress(user.wallet.address)}</span>
             <span className="sm:hidden">{user.name.split(' ')[0]}</span>
@@ -63,10 +66,12 @@ export function WalletDropdown() {
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel>
           <div className="flex items-center gap-3">
-            <img 
+            <Image 
               src={user.picture} 
               alt={user.name}
-              className="h-10 w-10 rounded-full"
+              width={40}
+              height={40}
+              className="rounded-full"
             />
             <div className="flex-1">
               <p className="font-medium">{user.name}</p>

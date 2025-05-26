@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Shield, Mail, User, Copy, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -41,10 +42,12 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center gap-4">
-                <img 
+                <Image 
                   src={user.picture} 
                   alt={user.name}
-                  className="h-20 w-20 rounded-full"
+                  width={80}
+                  height={80}
+                  className="rounded-full"
                 />
                 <div>
                   <h2 className="text-xl font-semibold">{user.name}</h2>

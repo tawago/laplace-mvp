@@ -20,9 +20,8 @@ interface Particle {
 export function LuxuryCanvasBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { theme } = useTheme();
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | undefined>(undefined);
   const particlesRef = useRef<Particle[]>([]);
-  const waveOffsetRef = useRef(0);
   const timeRef = useRef(0);
 
   useEffect(() => {

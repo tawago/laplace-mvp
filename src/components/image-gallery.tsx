@@ -11,7 +11,7 @@ interface ImageGalleryProps {
   hotelName: string;
 }
 
-export function ImageGallery({ images, hotelName }: ImageGalleryProps) {
+export function ImageGallery({ images }: ImageGalleryProps) {
   const [selectedImage, setSelectedImage] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
