@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { ImageGallery } from '@/components/image-gallery';
 import { HotelImage } from '@/components/hotel-image';
 import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
+import { TokenHolderBenefits } from '@/components/token-holder-benefits';
 import { useAuth } from '@/contexts/auth-context';
 import { LoginDialog } from '@/components/login-dialog';
 import { toast } from 'sonner';
@@ -186,6 +187,9 @@ export default function HotelPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Token Holder Benefits */}
+            <TokenHolderBenefits hotelId={hotel.id} hotelName={hotel.name} />
           </TabsContent>
 
           <TabsContent value="gallery" className="space-y-4">
