@@ -1,36 +1,131 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HotelToken – Mock Mobile Web App (Next.js + Tailwind + shadcn/ui)
 
-## Getting Started
+> **Objetivo:** Criar um mock navegável (somente front-end) para visualizar o fluxo de tokenização de quartos de dois hotéis: **THE SAIL** e **NYRA** (Malásia). Não haverá backend, lógica de carteira, nem blockchain neste estágio.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Páginas do Mock e Conteúdo
+
+### `/` – Landing Page
+
+- **Hero:** título e subtítulo com chamada para ação
+- **Botão "Começar"** levando ao catálogo (`/discover`)
+- **Mini-cards** com destaque visual dos dois hotéis
+- **Footer** com nome da plataforma
+
+---
+
+### `/discover` – Catálogo de Hotéis
+
+- **Navbar** simples com título
+- **Lista de HotelCard**: imagem, nome, ROI, progresso de venda
+- **Filtros simulados**: ROI, status
+- Cada card leva para `/hotel/the-sail` ou `/hotel/nyra`
+
+---
+
+### `/hotel/the-sail` e `/hotel/nyra` – Página do Hotel
+
+- **Carrossel de imagens do hotel**
+- **StatBar** com ROI garantido, cláusula de recompra (buyback), preço por token
+- **Tabs:**
+
+  - _Visão Geral:_ breve descrição do hotel
+  - _Quartos:_ tabela com as tipologias disponíveis (A, B, C...)
+
+    - Cada linha abre o **UnitSheet** para simular compra de tokens
+
+  - _FAQs:_ perguntas frequentes do investimento
+
+---
+
+### `UnitSheet` (componente Sheet)
+
+- **Informações da unidade** (tipo, área, valor total)
+- Campo para **quantidade de tokens**
+- **Subtotal** calculado (qty × valor por token)
+- Botão **Comprar** que abre `CheckoutDialog`
+
+---
+
+### `CheckoutDialog` (componente Dialog)
+
+- **Resumo da compra** (hotel, tipo, tokens, valor total)
+- Botão _Confirmar_
+- Ao confirmar, mostra **Toast** de sucesso e adiciona à carteira mock
+
+---
+
+### `/portfolio` – Carteira Simulada
+
+- **Resumo geral**: total investido, retorno estimado
+- **Tabela TokenTable**: hotel, tipo de quarto, tokens comprados, valor atual estimado
+
+---
+
+### `/about` – Sobre a Empresa
+
+- Texto explicando a SHENG TAI JAPAN e sua proposta
+- Links para os dois PDFs dos hotéis: THE SAIL e NYRA
+
+---
+
+### `not-found.tsx` – Página 404
+
+- Mensagem de página não encontrada
+- Link para retornar à home (`/`)
+
+---
+
+## Dados dos Hotéis (Exemplo em JSON)
+
+```ts
+export const hotels = [
+  {
+    id: "sail",
+    name: "THE SAIL Hotel Tower",
+    location: "Malaca, MY",
+    roiGuaranteed: "5–8% a.a.",
+    buyback: "170% no 19º ano",
+    thumbnail: "/images/sail_thumb.jpg",
+    units: [
+      { type: "A", size: 38, price: 34000000, tokens: 10000 },
+      { type: "B", size: 56, price: 42000000, tokens: 10000 },
+      { type: "C", size: 27, price: 30000000, tokens: 10000 },
+    ],
+  },
+  {
+    id: "nyra",
+    name: "NYRA Oceanview Hotel",
+    location: "Malaca, MY",
+    roiGuaranteed: "8% a.a.",
+    buyback: "100% no 9º ano",
+    thumbnail: "/images/nyra_thumb.jpg",
+    units: [
+      { type: "A", size: 44.5, price: 19300000, tokens: 10000 },
+      { type: "B", size: 53.1, price: 23400000, tokens: 10000 },
+      { type: "E", size: 70.3, price: 30200000, tokens: 10000 },
+    ],
+  },
+];
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Componentes Usados (shadcn/ui)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `HotelCard`
+- `StatBar`
+- `UnitSheet`
+- `CheckoutDialog`
+- `TokenTable`
+- `ThemeToggle`
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## Observações
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Tudo é simulado, os dados vêm de um JSON local
+- Sem integração de carteira, backend ou blockchain
+- Não será feito deploy nesta fase
+- Mock serve apenas para apresentação visual do projeto

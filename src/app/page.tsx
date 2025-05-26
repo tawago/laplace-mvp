@@ -1,103 +1,181 @@
-import Image from "next/image";
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ArrowRight, Building2, Shield, TrendingUp, Users } from 'lucide-react';
+import { hotels } from '@/data/hotels';
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white dark:from-zinc-950 dark:to-zinc-900">
+      {/* Hero Section - Mobile First */}
+      <section className="relative overflow-hidden px-4 py-16 sm:px-6 sm:py-24 lg:px-8 lg:py-32">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-transparent to-emerald-600/10" />
+        <div className="relative mx-auto max-w-7xl">
+          <div className="text-center">
+            <Badge className="mb-4 px-3 py-1" variant="secondary">
+              Blockchain-Powered Real Estate
+            </Badge>
+            <h1 className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-5xl md:text-6xl lg:text-7xl">
+              Own Premium Hotels
+              <span className="block bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
+                One Token at a Time
+              </span>
+            </h1>
+            <p className="mx-auto mt-6 max-w-2xl text-lg text-zinc-600 dark:text-zinc-400 sm:text-xl">
+              Invest in luxury Malaysian hotels with guaranteed returns up to 8% p.a. 
+              Start from just $500 with full buyback protection.
+            </p>
+            <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:justify-center">
+              <Link href="/discover">
+                <Button size="lg" className="w-full sm:w-auto">
+                  Start Investing
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/about">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                  Learn More
+                </Button>
+              </Link>
+            </div>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </section>
+
+      {/* Features Grid - Mobile Optimized */}
+      <section className="px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="group transition-all hover:shadow-lg">
+              <CardContent className="p-6">
+                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/20">
+                  <TrendingUp className="h-6 w-6 text-blue-600" />
+                </div>
+                <h3 className="mb-2 font-semibold">Guaranteed Returns</h3>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Up to 8% annual returns, paid regardless of occupancy
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="group transition-all hover:shadow-lg">
+              <CardContent className="p-6">
+                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/20">
+                  <Shield className="h-6 w-6 text-emerald-600" />
+                </div>
+                <h3 className="mb-2 font-semibold">Buyback Protection</h3>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  100-170% buyback options from year 9 onwards
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="group transition-all hover:shadow-lg">
+              <CardContent className="p-6">
+                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/20">
+                  <Building2 className="h-6 w-6 text-purple-600" />
+                </div>
+                <h3 className="mb-2 font-semibold">Prime Locations</h3>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Strategic locations in Malaysia's tourism hotspots
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="group transition-all hover:shadow-lg">
+              <CardContent className="p-6">
+                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/20">
+                  <Users className="h-6 w-6 text-orange-600" />
+                </div>
+                <h3 className="mb-2 font-semibold">Full Support</h3>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Complete management and multi-language assistance
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Hotels - Mobile Cards */}
+      <section className="bg-zinc-50 px-4 py-16 dark:bg-zinc-900/50 sm:px-6 sm:py-24 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-4xl">
+              Featured Investment Properties
+            </h2>
+            <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
+              Premium hotels in Malaysia's Melaka Waterfront Economic Zone
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-8 lg:grid-cols-2">
+            {hotels.map((hotel) => (
+              <Card key={hotel.id} className="group overflow-hidden transition-all hover:shadow-xl">
+                <div className="aspect-[16/9] overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+                  <div className="flex h-full items-center justify-center">
+                    <Building2 className="h-16 w-16 text-zinc-400" />
+                  </div>
+                </div>
+                <CardContent className="p-6">
+                  <div className="mb-4 flex items-start justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold">{hotel.name}</h3>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        {hotel.location}, {hotel.country}
+                      </p>
+                    </div>
+                    <Badge variant="secondary">{hotel.roiGuaranteed}</Badge>
+                  </div>
+                  
+                  <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+                    {hotel.description}
+                  </p>
+
+                  <div className="mb-6 grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-zinc-500">Min. Investment</p>
+                      <p className="font-semibold">${hotel.minInvestment}</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-500">Buyback</p>
+                      <p className="font-semibold">{hotel.buybackPercentage}% Year {hotel.buybackYear}</p>
+                    </div>
+                  </div>
+
+                  <Link href={`/hotel/${hotel.id}`}>
+                    <Button className="w-full" variant="outline">
+                      View Details
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-4xl">
+            Ready to Start Your Investment Journey?
+          </h2>
+          <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
+            Join thousands of investors already earning guaranteed returns
+          </p>
+          <div className="mt-10">
+            <Link href="/discover">
+              <Button size="lg" className="px-8">
+                Browse All Properties
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
