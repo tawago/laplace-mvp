@@ -23,6 +23,7 @@ import {
   liquidatePosition as markLiquidated,
   calculatePositionMetrics,
   getLiquidatablePositions,
+  checkPositionLiquidatable,
 } from './positions';
 import {
   validateBorrow,
@@ -598,7 +599,19 @@ export async function processLiquidation(
   let positions: Position[];
   if (userAddress) {
     const position = await getPositionForUser(userAddress, marketId);
-    positions = position ? [position] : [];
+    if (
+      position &&
+      checkPositionLiquidatable(
+        position,
+        market.liquidation_ltv_ratio,
+        prices.collateralPriceUsd,
+        prices.debtPriceUsd
+      )
+    ) {
+      positions = [position];
+    } else {
+      positions = [];
+    }
   } else {
     positions = await getLiquidatablePositions(
       marketId,

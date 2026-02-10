@@ -482,16 +482,16 @@ export default function LendingPage() {
     }
   };
 
-  const getHealthFactorColor = (hf: number) => {
-    if (!Number.isFinite(hf)) return 'text-emerald-600';
-    if (hf < 1.1) return 'text-red-600';
-    if (hf < 1.5) return 'text-yellow-600';
-    return 'text-emerald-600';
-  };
-
   const getHealthProgress = (hf: number) => {
     if (!Number.isFinite(hf)) return 100;
     return Math.min(100, (hf / 2) * 100);
+  };
+
+  const getHealthFactorColor = (hf: number) => {
+    if (!Number.isFinite(hf)) return 'text-emerald-600 dark:text-emerald-300';
+    if (hf < 1.15) return 'text-red-600 dark:text-red-400';
+    if (hf < 1.5) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-emerald-600 dark:text-emerald-300';
   };
 
   const StatusIcon = ({ status }: { status: 'pending' | 'loading' | 'done' | 'error' }) => {
@@ -640,7 +640,7 @@ export default function LendingPage() {
                 </div>
                 <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                   <p className="text-xs uppercase tracking-wide text-zinc-500">Health Factor</p>
-                  <p className={`text-xl font-bold ${Number.isFinite(metrics.healthFactor) ? '' : 'text-emerald-600 dark:text-emerald-300'}`}>
+                  <p className={`text-xl font-bold ${getHealthFactorColor(metrics.healthFactor)}`}>
                     {Number.isFinite(metrics.healthFactor) ? metrics.healthFactor.toFixed(2) : '...'}
                   </p>
                   <Progress value={getHealthProgress(metrics.healthFactor)} className="mt-2 h-1.5 bg-zinc-200 dark:bg-zinc-800" />

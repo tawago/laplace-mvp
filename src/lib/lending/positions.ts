@@ -432,3 +432,31 @@ export async function getLiquidatablePositions(
 
   return liquidatable;
 }
+
+/**
+ * Check if a single position is liquidatable
+ *
+ * Reuses the same health check logic as getLiquidatablePositions.
+ */
+export function checkPositionLiquidatable(
+  position: Position,
+  liquidationLtvRatio: number,
+  collateralPriceUsd: number,
+  debtPriceUsd: number
+): boolean {
+  if (position.loanPrincipal <= 0) {
+    return false;
+  }
+
+  const newInterest = calculateInterestAccrued(
+    position.loanPrincipal,
+    position.interestRateAtOpen,
+    position.lastInterestUpdate,
+    new Date()
+  );
+
+  const totalDebt = calculateTotalDebt(position.loanPrincipal, position.interestAccrued + newInterest);
+  const currentLtv = calculateLtv(position.collateralAmount, collateralPriceUsd, totalDebt, debtPriceUsd);
+
+  return isLiquidatable(currentLtv, liquidationLtvRatio);
+}
