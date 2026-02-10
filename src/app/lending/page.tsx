@@ -610,40 +610,40 @@ export default function LendingPage() {
 
         {/* Position Overview */}
         {wallet && walletReady && position && metrics && selectedMarket && (
-          <Card className="mb-6 bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+          <Card className="mb-6 border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-900/40">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
+              <CardTitle className="flex items-center gap-2">
                 <Shield className="h-5 w-5" />
                 Your Position
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <div className="rounded-lg bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-wide text-white/70">Collateral</p>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Collateral</p>
                   <p className="text-xl font-bold">
                     {position.collateralAmount.toFixed(2)} {selectedMarket.collateralCurrency}
                   </p>
-                  <p className="text-sm text-white/60">${metrics.collateralValueUsd.toFixed(2)}</p>
+                  <p className="text-sm text-zinc-500">${metrics.collateralValueUsd.toFixed(2)}</p>
                 </div>
-                <div className="rounded-lg bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-wide text-white/70">Total Debt</p>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Total Debt</p>
                   <p className="text-xl font-bold">
                     {metrics.totalDebt.toFixed(2)} {selectedMarket.debtCurrency}
                   </p>
-                  <p className="text-sm text-white/60">${metrics.debtValueUsd.toFixed(2)}</p>
+                  <p className="text-sm text-zinc-500">${metrics.debtValueUsd.toFixed(2)}</p>
                 </div>
-                <div className="rounded-lg bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-wide text-white/70">Current LTV</p>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Current LTV</p>
                   <p className="text-xl font-bold">{(metrics.currentLtv * 100).toFixed(1)}%</p>
-                  <p className="text-sm text-white/60">Max: {selectedMarket.maxLtvRatio * 100}%</p>
+                  <p className="text-sm text-zinc-500">Max: {selectedMarket.maxLtvRatio * 100}%</p>
                 </div>
-                <div className="rounded-lg bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-wide text-white/70">Health Factor</p>
-                  <p className={`text-xl font-bold ${Number.isFinite(metrics.healthFactor) ? '' : 'text-emerald-300'}`}>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Health Factor</p>
+                  <p className={`text-xl font-bold ${Number.isFinite(metrics.healthFactor) ? '' : 'text-emerald-600 dark:text-emerald-300'}`}>
                     {Number.isFinite(metrics.healthFactor) ? metrics.healthFactor.toFixed(2) : '...'}
                   </p>
-                  <Progress value={getHealthProgress(metrics.healthFactor)} className="mt-2 h-1.5 bg-white/20" />
+                  <Progress value={getHealthProgress(metrics.healthFactor)} className="mt-2 h-1.5 bg-zinc-200 dark:bg-zinc-800" />
                 </div>
               </div>
             </CardContent>
