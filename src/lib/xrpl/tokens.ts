@@ -12,11 +12,65 @@ export interface TransactionVerification {
   source: string;
   amount: TokenAmount | null;
   hash: string;
+  transactionType: string;
+  usedDeliveredAmount?: boolean;
+  rawMeta?: Record<string, unknown> | null;
+  rawTx?: Record<string, unknown> | null;
 }
 
 export interface SendTokenResult {
   hash: string;
   result: string;
+  transactionType?: string;
+  rawTx?: Record<string, unknown> | null;
+  rawMeta?: Record<string, unknown> | null;
+}
+
+type XrplAmount = string | { currency: string; issuer: string; value: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseXrplAmount(raw: unknown): XrplAmount | undefined {
+  if (typeof raw === 'string') {
+    return raw;
+  }
+
+  if (
+    isRecord(raw) &&
+    typeof raw.currency === 'string' &&
+    typeof raw.issuer === 'string' &&
+    typeof raw.value === 'string'
+  ) {
+    return {
+      currency: raw.currency,
+      issuer: raw.issuer,
+      value: raw.value,
+    };
+  }
+
+  return undefined;
+}
+
+function toTokenAmount(raw: XrplAmount | undefined): TokenAmount | null {
+  if (!raw) {
+    return null;
+  }
+
+  if (typeof raw === 'string') {
+    return {
+      currency: 'XRP',
+      value: String(dropsToXrp(raw)),
+      issuer: '',
+    };
+  }
+
+  return {
+    currency: raw.currency,
+    value: raw.value,
+    issuer: raw.issuer,
+  };
 }
 
 /**
@@ -41,16 +95,28 @@ export async function sendToken(
     },
   }, { wallet });
 
-  const meta = tx.result.meta;
+  const txResult = tx.result as unknown as Record<string, unknown>;
+  const meta = isRecord(txResult.meta) ? txResult.meta : null;
+  const rawTx = isRecord(txResult.tx_json) ? txResult.tx_json : txResult;
+  const transactionType = typeof rawTx.TransactionType === 'string' ? rawTx.TransactionType : undefined;
   let result = 'unknown';
 
-  if (typeof meta === 'object' && meta !== null && 'TransactionResult' in meta) {
+  if (meta && typeof meta.TransactionResult === 'string') {
     result = meta.TransactionResult as string;
   }
 
+  if (typeof txResult.hash !== 'string') {
+    throw new Error('XRPL response missing transaction hash');
+  }
+
+  const hash = txResult.hash;
+
   return {
-    hash: tx.result.hash,
+    hash,
     result,
+    transactionType,
+    rawTx,
+    rawMeta: meta,
   };
 }
 
@@ -66,41 +132,47 @@ export async function verifyTransaction(
     transaction: txHash,
   });
 
-  const result = tx.result;
+  const result = tx.result as unknown as Record<string, unknown>;
   const validated = result.validated === true;
+  const txJson = isRecord(result.tx_json) ? result.tx_json : result;
+  const transactionType = typeof txJson.TransactionType === 'string' ? txJson.TransactionType : '';
+  const rawMeta = isRecord(result.meta) ? result.meta : null;
 
-  // Transaction data is in tx_json
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const txResult = result as any;
-  const txJson = txResult.tx_json || txResult;
+  const metaDeliveredRaw = rawMeta?.delivered_amount;
+  const deliveredFromMeta =
+    metaDeliveredRaw === 'unavailable' ? undefined : parseXrplAmount(metaDeliveredRaw);
+  const resultDeliveredRaw = result.delivered_amount;
+  const deliveredFromResult =
+    resultDeliveredRaw === 'unavailable' ? undefined : parseXrplAmount(resultDeliveredRaw);
+  const deliveredAmount = deliveredFromMeta ?? deliveredFromResult;
 
-  // For token payments, DeliverMax is an object with currency, issuer, value
-  // For XRP payments, DeliverMax is a string (drops)
   let amount: TokenAmount | null = null;
-  const rawAmount = txJson.DeliverMax || txJson.Amount;
+  let usedDeliveredAmount: boolean | undefined;
 
-  if (rawAmount) {
-    if (typeof rawAmount === 'string') {
-      amount = {
-        currency: 'XRP',
-        value: String(dropsToXrp(rawAmount)),
-        issuer: '',
-      };
-    } else if (typeof rawAmount === 'object') {
-      amount = {
-        currency: rawAmount.currency,
-        value: rawAmount.value,
-        issuer: rawAmount.issuer,
-      };
+  if (transactionType === 'Payment') {
+    if (deliveredAmount) {
+      amount = toTokenAmount(deliveredAmount);
+      usedDeliveredAmount = true;
+    } else {
+      amount = toTokenAmount(parseXrplAmount(txJson.Amount));
+      usedDeliveredAmount = false;
     }
   }
 
+  const destination = typeof txJson.Destination === 'string' ? txJson.Destination : '';
+  const source = typeof txJson.Account === 'string' ? txJson.Account : '';
+  const hash = typeof result.hash === 'string' ? result.hash : txHash;
+
   return {
     validated,
-    destination: txJson.Destination || '',
-    source: txJson.Account || '',
+    destination,
+    source,
     amount,
-    hash: txResult.hash || txHash,
+    hash,
+    transactionType,
+    usedDeliveredAmount,
+    rawMeta,
+    rawTx: txJson,
   };
 }
 

@@ -129,3 +129,31 @@ export const hotels = [
 - Sem integração de carteira, backend ou blockchain
 - Não será feito deploy nesta fase
 - Mock serve apenas para apresentação visual do projeto
+
+---
+
+## XRPL Transaction Capture Mode
+
+For the lending/XRPL module, the `raw_tx_json` field in `onchain_transactions` now supports two modes:
+
+- **Default mode (recommended): minimal capture**
+  - Stores only canonical fields for operational auditability (`hash`, `transactionType`, `source`, `destination`, `amount`, `validated`, etc.)
+  - Lower storage and payload cost
+
+- **Full capture mode (optional): complete capture**
+  - Stores the full payload returned by XRPL in `raw_tx_json`
+  - Useful for detailed forensics and troubleshooting
+
+### How to enable full capture mode
+
+Add this to `.env.local`:
+
+```env
+XRPL_STORE_FULL_TX_JSON=true
+```
+
+If this variable is not set (or is not exactly `true`), the system uses minimal capture.
+
+### Metadata
+
+- `raw_meta_json` is still persisted for effective-delivery audit/validation (`delivered_amount`) in lending operations.

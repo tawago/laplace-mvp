@@ -8,7 +8,12 @@
 
 import { getClient } from '../xrpl/client';
 import { getBackendWallet, getIssuerAddress, getBackendAddress } from '../xrpl/wallet';
-import { verifyTransaction, sendToken } from '../xrpl/tokens';
+import {
+  verifyTransaction,
+  sendToken,
+  type SendTokenResult,
+  type TransactionVerification,
+} from '../xrpl/tokens';
 import { getMarketById, getMarketPrices } from '../db/seed';
 import { upsertOnchainTransaction, isTransactionProcessed } from './onchain';
 import { emitAppEvent, updateEventStatus } from './events';
@@ -51,6 +56,55 @@ export interface LendingServiceError {
 
 function createError(code: string, message: string): LendingServiceError {
   return { code, message };
+}
+
+const STORE_FULL_TX_JSON = process.env.XRPL_STORE_FULL_TX_JSON === 'true';
+
+function buildInboundRawTxJson(tx: TransactionVerification): Record<string, unknown> {
+  if (STORE_FULL_TX_JSON && tx.rawTx) {
+    return tx.rawTx;
+  }
+
+  return {
+    hash: tx.hash,
+    transactionType: tx.transactionType,
+    source: tx.source,
+    destination: tx.destination,
+    amount: tx.amount,
+    validated: tx.validated,
+    usedDeliveredAmount: tx.usedDeliveredAmount ?? null,
+    captureMode: 'minimal',
+  };
+}
+
+function buildOutboundRawTxJson(params: {
+  tx: SendTokenResult;
+  sourceAddress: string;
+  destinationAddress: string;
+  currency: string;
+  issuer: string;
+  amount: number;
+}): Record<string, unknown> {
+  const { tx, sourceAddress, destinationAddress, currency, issuer, amount } = params;
+
+  if (STORE_FULL_TX_JSON && tx.rawTx) {
+    return tx.rawTx;
+  }
+
+  return {
+    hash: tx.hash,
+    transactionType: tx.transactionType ?? 'Payment',
+    source: sourceAddress,
+    destination: destinationAddress,
+    amount: {
+      currency,
+      issuer,
+      value: amount.toString(),
+    },
+    validated: true,
+    txResult: tx.result,
+    captureMode: 'minimal',
+  };
 }
 
 /**
@@ -100,6 +154,16 @@ export async function processDeposit(
       return { error: createError('WRONG_DESTINATION', `Transaction must be sent to ${backendAddress}`) };
     }
 
+    if (tx.transactionType !== 'Payment') {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'NOT_PAYMENT',
+        message: 'Transaction must be a Payment',
+      });
+      return {
+        error: createError('NOT_PAYMENT', `Expected Payment, got ${tx.transactionType}`),
+      };
+    }
+
     if (!tx.amount) {
       await updateEventStatus(event.id, 'FAILED', { code: 'NO_AMOUNT', message: 'Could not determine amount' });
       return { error: createError('NO_AMOUNT', 'Could not determine transaction amount') };
@@ -114,6 +178,19 @@ export async function processDeposit(
         error: createError(
           'WRONG_CURRENCY',
           `Expected ${market.collateral_currency}, got ${tx.amount.currency}`
+        ),
+      };
+    }
+
+    if (tx.amount.currency !== 'XRP' && tx.amount.issuer !== market.collateral_issuer) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_ISSUER',
+        message: `Expected issuer ${market.collateral_issuer}`,
+      });
+      return {
+        error: createError(
+          'WRONG_ISSUER',
+          `Expected issuer ${market.collateral_issuer}, got ${tx.amount.issuer}`
         ),
       };
     }
@@ -138,13 +215,14 @@ export async function processDeposit(
     const onchainTx = await upsertOnchainTransaction({
       txHash,
       validated: tx.validated,
-      txType: 'Payment',
+      txType: tx.transactionType,
       sourceAddress: tx.source,
       destinationAddress: tx.destination,
       currency: tx.amount.currency,
       issuer: tx.amount.issuer,
       amount,
-      rawTxJson: { verified: true, hash: tx.hash },
+      rawTxJson: buildInboundRawTxJson(tx),
+      rawMetaJson: tx.rawMeta || null,
     });
 
     // Create or update position
@@ -273,13 +351,21 @@ export async function processBorrow(
     await upsertOnchainTransaction({
       txHash: tx.hash,
       validated: true,
-      txType: 'Payment',
+      txType: tx.transactionType ?? 'Payment',
       sourceAddress: backendWallet.address,
       destinationAddress: userAddress,
       currency: market.debt_currency,
       issuer: issuerAddress,
       amount,
-      rawTxJson: { hash: tx.hash, result: tx.result },
+      rawTxJson: buildOutboundRawTxJson({
+        tx,
+        sourceAddress: backendWallet.address,
+        destinationAddress: userAddress,
+        currency: market.debt_currency,
+        issuer: issuerAddress,
+        amount,
+      }),
+      rawMetaJson: tx.rawMeta || null,
     });
 
     // Update position
@@ -359,6 +445,16 @@ export async function processRepay(
       return { error: createError('WRONG_DESTINATION', `Transaction must be sent to ${backendAddress}`) };
     }
 
+    if (tx.transactionType !== 'Payment') {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'NOT_PAYMENT',
+        message: 'Transaction must be a Payment',
+      });
+      return {
+        error: createError('NOT_PAYMENT', `Expected Payment, got ${tx.transactionType}`),
+      };
+    }
+
     if (!tx.amount) {
       await updateEventStatus(event.id, 'FAILED', { code: 'NO_AMOUNT', message: 'No amount' });
       return { error: createError('NO_AMOUNT', 'Could not determine transaction amount') };
@@ -370,6 +466,19 @@ export async function processRepay(
         error: createError(
           'WRONG_CURRENCY',
           `Expected ${market.debt_currency}, got ${tx.amount.currency}`
+        ),
+      };
+    }
+
+    if (tx.amount.currency !== 'XRP' && tx.amount.issuer !== market.debt_issuer) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_ISSUER',
+        message: `Expected issuer ${market.debt_issuer}`,
+      });
+      return {
+        error: createError(
+          'WRONG_ISSUER',
+          `Expected issuer ${market.debt_issuer}, got ${tx.amount.issuer}`
         ),
       };
     }
@@ -400,13 +509,14 @@ export async function processRepay(
     const onchainTx = await upsertOnchainTransaction({
       txHash,
       validated: tx.validated,
-      txType: 'Payment',
+      txType: tx.transactionType,
       sourceAddress: tx.source,
       destinationAddress: tx.destination,
       currency: tx.amount.currency,
       issuer: tx.amount.issuer,
       amount,
-      rawTxJson: { verified: true, hash: tx.hash },
+      rawTxJson: buildInboundRawTxJson(tx),
+      rawMetaJson: tx.rawMeta || null,
     });
 
     // Apply repayment
@@ -533,13 +643,21 @@ export async function processWithdraw(
     await upsertOnchainTransaction({
       txHash: tx.hash,
       validated: true,
-      txType: 'Payment',
+      txType: tx.transactionType ?? 'Payment',
       sourceAddress: backendWallet.address,
       destinationAddress: userAddress,
       currency: market.collateral_currency,
       issuer: issuerAddress,
       amount,
-      rawTxJson: { hash: tx.hash, result: tx.result },
+      rawTxJson: buildOutboundRawTxJson({
+        tx,
+        sourceAddress: backendWallet.address,
+        destinationAddress: userAddress,
+        currency: market.collateral_currency,
+        issuer: issuerAddress,
+        amount,
+      }),
+      rawMetaJson: tx.rawMeta || null,
     });
 
     // Update position
