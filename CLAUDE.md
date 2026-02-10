@@ -16,11 +16,26 @@ pnpm start
 
 # Run linting
 pnpm lint
+
+# XRPL + DB setup
+pnpm setup:testnet
+pnpm setup:db
+pnpm setup:all
+
+# Drizzle
+pnpm db:generate
+pnpm db:push
+pnpm db:studio
 ```
 
 ## Project Overview
 
-This is a **Sheng Tai International** mock mobile web app - a frontend-only Next.js application showcasing hotel room tokenization for two Malaysian hotels: THE SAIL and NYRA. The app simulates token purchase flows without any backend, wallet integration, or blockchain functionality.
+This project is now a hybrid app that combines:
+
+1. The original **Sheng Tai International** hotel tokenization mock UI.
+2. An **XRPL testnet lending PoC** for JFIIP application
+
+It includes a real backend/service layer for lending flows (via Next.js API routes), plus Neon Postgres state management through Drizzle.
 
 ## Architecture
 
@@ -30,29 +45,39 @@ This is a **Sheng Tai International** mock mobile web app - a frontend-only Next
 - **Tailwind CSS v4** with CSS variables
 - **shadcn/ui** components (new-york style)
 - **Lucide React** for icons
+- **XRPL testnet** integration (`xrpl` package)
+- **Neon Postgres + Drizzle ORM** for persistence
 
 ### Key Routes
-- `/` - Landing page with hero and hotel highlights
-- `/discover` - Hotel catalog with filters
-- `/hotel/[id]` - Individual hotel pages (the-sail, nyra)
-- `/portfolio` - Mock wallet/portfolio view
-- `/about` - Company information
+- `/` - Landing page with hotel investment positioning
+- `/discover` - Hotel catalog
+- `/hotel/[id]` - Hotel detail pages
+- `/portfolio` and `/wallet` - Mock portfolio/wallet experiences
+- `/lending` - XRPL lending UI (wallet setup, faucet, lending actions)
+- `/about`, `/bookings`, `/profile` - Supporting product pages
 
-### Data Structure
-Hotels and units are defined in mock JSON format with:
-- Hotel info: id, name, location, ROI, buyback terms
-- Unit types: type designation (A, B, C, etc.), size, price, token count
+### API Surface
+- `/api/balances`
+- `/api/faucet`
+- `/api/lending/config`
+- `/api/lending/position`
+- `/api/lending/deposit`
+- `/api/lending/borrow`
+- `/api/lending/repay`
+- `/api/lending/withdraw`
+- `/api/lending/liquidate`
+- `/api/lending/prices`
 
-### Component Architecture
-Uses shadcn/ui components including:
-- `HotelCard` - Hotel listing cards
-- `StatBar` - Key metrics display
-- `UnitSheet` - Token purchase interface
-- `CheckoutDialog` - Purchase confirmation
-- `TokenTable` - Portfolio display
+### Data and Service Layers
+- Hotel catalog data remains mock/static for UI flows.
+- Lending state is persisted in DB tables: `users`, `markets`, `positions`, `onchain_transactions`, `app_events`, `price_oracle`.
+- Core lending service lives in `src/lib/lending/service.ts`.
+- XRPL helpers live in `src/lib/xrpl/*` (server) and `src/lib/client/xrpl.ts` (client).
+- DB schema source of truth: `src/lib/db/schema.ts`.
 
 ### Important Notes
-- All data is mock/static - no real transactions
-- No authentication or user management
-- State is client-side only (no persistence)
-- Images referenced should be placed in `/public/images/`
+- Do not remove legacy hotel pages/components unless explicitly requested; they are still used.
+- Lending flows execute real XRPL testnet transactions and depend on env configuration.
+- `pnpm dev` runs with HTTPS on port `3001`.
+- `.env.local` is required for wallet seeds/addresses and `DATABASE_URL`.
+- Keep changes compatible with the current hybrid state (mock UI + functional lending backend).
