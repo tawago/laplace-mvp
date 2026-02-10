@@ -16,7 +16,14 @@ import {
 } from '../xrpl/tokens';
 import { getMarketById, getMarketPrices } from '../db/seed';
 import { upsertOnchainTransaction, isTransactionProcessed } from './onchain';
-import { emitAppEvent, updateEventStatus } from './events';
+import {
+  emitAppEvent,
+  updateEventStatus,
+  acquireIdempotencyKey,
+  validateIdempotencyIdentity,
+  completeIdempotencyEvent,
+  type AppEventRow,
+} from './events';
 import {
   getOrCreatePosition,
   getPositionForUser,
@@ -56,6 +63,17 @@ export interface LendingServiceError {
 
 function createError(code: string, message: string): LendingServiceError {
   return { code, message };
+}
+
+function reconstructResult<T>(event: AppEventRow): T | null {
+  try {
+    const payload = typeof event.payload === 'string'
+      ? JSON.parse(event.payload)
+      : event.payload;
+    return payload?.result ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const STORE_FULL_TX_JSON = process.env.XRPL_STORE_FULL_TX_JSON === 'true';
@@ -271,6 +289,66 @@ export async function processBorrow(
     return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
   }
 
+  // === IDEMPOTENCY: Atomic acquisition ===
+  let event: AppEventRow;
+
+  if (idempotencyKey) {
+    const acquireResult = await acquireIdempotencyKey({
+      eventType: LENDING_EVENTS.BORROW_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      idempotencyKey,
+      amount,
+      currency: market.debt_currency,
+      payload: {},
+    });
+
+    if (!acquireResult.acquired) {
+      // Key already exists - check status
+      const existingEvent = acquireResult.event;
+
+      // Validate operation identity
+      if (!validateIdempotencyIdentity(existingEvent, {
+        eventType: LENDING_EVENTS.BORROW_INITIATED,
+        userAddress,
+        marketId,
+      })) {
+        return { error: createError('IDEMPOTENCY_MISMATCH', 'Idempotency key used for different operation') };
+      }
+
+      if (acquireResult.status === 'COMPLETED') {
+        const storedResult = reconstructResult<BorrowResult>(existingEvent);
+        if (storedResult) return { result: storedResult };
+        return { error: createError('ALREADY_COMPLETED', 'Operation completed but result unavailable') };
+      }
+
+      if (acquireResult.status === 'PENDING') {
+        return { error: createError('OPERATION_IN_PROGRESS', 'Operation already in progress') };
+      }
+
+      // FAILED - allow retry by using this event
+      event = existingEvent;
+      // Reset status to PENDING for retry
+      await updateEventStatus(event.id, 'PENDING');
+    } else {
+      event = acquireResult.event;
+    }
+  } else {
+    // No idempotency key - create event normally
+    event = await emitAppEvent({
+      eventType: LENDING_EVENTS.BORROW_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      amount,
+      currency: market.debt_currency,
+    });
+  }
+  // === END IDEMPOTENCY ===
+
   const prices = await getMarketPrices(marketId);
   if (!prices) {
     return { error: createError('PRICES_NOT_FOUND', 'Market prices not available') };
@@ -313,19 +391,6 @@ export async function processBorrow(
       ),
     };
   }
-
-  // Emit pending event
-  const event = await emitAppEvent({
-    eventType: LENDING_EVENTS.BORROW_INITIATED,
-    module: 'LENDING',
-    status: 'PENDING',
-    userAddress,
-    marketId,
-    positionId: position.id,
-    amount,
-    currency: market.debt_currency,
-    idempotencyKey,
-  });
 
   try {
     // Send debt tokens to user
@@ -371,8 +436,21 @@ export async function processBorrow(
     // Update position
     const finalPosition = await addLoanPrincipal(position.id, amount);
 
-    // Update event
-    await updateEventStatus(event.id, 'COMPLETED');
+    const borrowResult: BorrowResult = {
+      positionId: finalPosition.id,
+      borrowedAmount: amount,
+      newLoanPrincipal: finalPosition.loanPrincipal,
+      txHash: tx.hash,
+    };
+
+    // Complete idempotency event with result
+    if (idempotencyKey) {
+      await completeIdempotencyEvent(event.id, { result: borrowResult });
+    } else {
+      await updateEventStatus(event.id, 'COMPLETED');
+    }
+
+    // Emit separate audit event (no idempotency key)
     await emitAppEvent({
       eventType: LENDING_EVENTS.BORROW_COMPLETED,
       module: 'LENDING',
@@ -385,14 +463,7 @@ export async function processBorrow(
       payload: { txHash: tx.hash },
     });
 
-    return {
-      result: {
-        positionId: finalPosition.id,
-        borrowedAmount: amount,
-        newLoanPrincipal: finalPosition.loanPrincipal,
-        txHash: tx.hash,
-      },
-    };
+    return { result: borrowResult };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     await updateEventStatus(event.id, 'FAILED', { code: 'INTERNAL_ERROR', message });
@@ -568,6 +639,66 @@ export async function processWithdraw(
     return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
   }
 
+  // === IDEMPOTENCY: Atomic acquisition ===
+  let event: AppEventRow;
+
+  if (idempotencyKey) {
+    const acquireResult = await acquireIdempotencyKey({
+      eventType: LENDING_EVENTS.WITHDRAW_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      idempotencyKey,
+      amount,
+      currency: market.collateral_currency,
+      payload: {},
+    });
+
+    if (!acquireResult.acquired) {
+      // Key already exists - check status
+      const existingEvent = acquireResult.event;
+
+      // Validate operation identity
+      if (!validateIdempotencyIdentity(existingEvent, {
+        eventType: LENDING_EVENTS.WITHDRAW_INITIATED,
+        userAddress,
+        marketId,
+      })) {
+        return { error: createError('IDEMPOTENCY_MISMATCH', 'Idempotency key used for different operation') };
+      }
+
+      if (acquireResult.status === 'COMPLETED') {
+        const storedResult = reconstructResult<WithdrawResult>(existingEvent);
+        if (storedResult) return { result: storedResult };
+        return { error: createError('ALREADY_COMPLETED', 'Operation completed but result unavailable') };
+      }
+
+      if (acquireResult.status === 'PENDING') {
+        return { error: createError('OPERATION_IN_PROGRESS', 'Operation already in progress') };
+      }
+
+      // FAILED - allow retry by using this event
+      event = existingEvent;
+      // Reset status to PENDING for retry
+      await updateEventStatus(event.id, 'PENDING');
+    } else {
+      event = acquireResult.event;
+    }
+  } else {
+    // No idempotency key - create event normally
+    event = await emitAppEvent({
+      eventType: LENDING_EVENTS.WITHDRAW_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      amount,
+      currency: market.collateral_currency,
+    });
+  }
+  // === END IDEMPOTENCY ===
+
   const prices = await getMarketPrices(marketId);
   if (!prices) {
     return { error: createError('PRICES_NOT_FOUND', 'Market prices not available') };
@@ -605,19 +736,6 @@ export async function processWithdraw(
       ),
     };
   }
-
-  // Emit pending event
-  const event = await emitAppEvent({
-    eventType: LENDING_EVENTS.WITHDRAW_INITIATED,
-    module: 'LENDING',
-    status: 'PENDING',
-    userAddress,
-    marketId,
-    positionId: position.id,
-    amount,
-    currency: market.collateral_currency,
-    idempotencyKey,
-  });
 
   try {
     // Send collateral back to user
@@ -663,8 +781,21 @@ export async function processWithdraw(
     // Update position
     const finalPosition = await removeCollateral(position.id, amount);
 
-    // Update event
-    await updateEventStatus(event.id, 'COMPLETED');
+    const withdrawResult: WithdrawResult = {
+      positionId: finalPosition.id,
+      withdrawnAmount: amount,
+      remainingCollateral: finalPosition.collateralAmount,
+      txHash: tx.hash,
+    };
+
+    // Complete idempotency event with result
+    if (idempotencyKey) {
+      await completeIdempotencyEvent(event.id, { result: withdrawResult });
+    } else {
+      await updateEventStatus(event.id, 'COMPLETED');
+    }
+
+    // Emit separate audit event (no idempotency key)
     await emitAppEvent({
       eventType: LENDING_EVENTS.WITHDRAW_COMPLETED,
       module: 'LENDING',
@@ -677,14 +808,7 @@ export async function processWithdraw(
       payload: { txHash: tx.hash },
     });
 
-    return {
-      result: {
-        positionId: finalPosition.id,
-        withdrawnAmount: amount,
-        remainingCollateral: finalPosition.collateralAmount,
-        txHash: tx.hash,
-      },
-    };
+    return { result: withdrawResult };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     await updateEventStatus(event.id, 'FAILED', { code: 'INTERNAL_ERROR', message });

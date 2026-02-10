@@ -62,7 +62,9 @@ export async function POST(request: NextRequest) {
     const { result, error } = await processBorrow(userAddress, marketId, amount, idempotencyKey);
 
     if (error) {
-      const status = error.code === 'INTERNAL_ERROR' ? 500 : 400;
+      let status = 400;
+      if (error.code === 'INTERNAL_ERROR') status = 500;
+      if (error.code === 'OPERATION_IN_PROGRESS') status = 409;
       return NextResponse.json({ success: false, error }, { status });
     }
 

@@ -183,3 +183,105 @@ export async function getEventByIdempotencyKey(key: string): Promise<AppEventRow
 
   return event ? toRow(event) : null;
 }
+
+// ============================================================
+// Atomic Idempotency Helpers
+// ============================================================
+
+export interface IdempotencyAcquireResult {
+  acquired: boolean;
+  event: AppEventRow;
+  status: 'NEW' | 'PENDING' | 'COMPLETED' | 'FAILED';
+}
+
+export interface IdempotencyIdentity {
+  eventType: string;
+  userAddress: string;
+  marketId: string;
+}
+
+/**
+ * Atomically acquire an idempotency key or return existing event.
+ * Uses INSERT ON CONFLICT to prevent races.
+ */
+export async function acquireIdempotencyKey(
+  params: EmitEventParams & { idempotencyKey: string }
+): Promise<IdempotencyAcquireResult> {
+  // Atomic insert with conflict handling
+  const [inserted] = await db
+    .insert(appEvents)
+    .values({
+      eventType: params.eventType,
+      module: params.module,
+      status: params.status,
+      userId: params.userId ?? null,
+      userAddress: params.userAddress ?? null,
+      marketId: params.marketId ?? null,
+      positionId: params.positionId ?? null,
+      onchainTxId: params.onchainTxId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      amount: params.amount?.toString() ?? null,
+      currency: params.currency ?? null,
+      errorCode: params.errorCode ?? null,
+      errorMessage: params.errorMessage ?? null,
+      payload: params.payload ?? {},
+    })
+    .onConflictDoNothing({ target: appEvents.idempotencyKey })
+    .returning();
+
+  if (inserted) {
+    // Successfully acquired the key
+    return {
+      acquired: true,
+      event: toRow(inserted),
+      status: 'NEW',
+    };
+  }
+
+  // Key already exists - fetch existing event
+  const existing = await db.query.appEvents.findFirst({
+    where: eq(appEvents.idempotencyKey, params.idempotencyKey),
+  });
+
+  if (!existing) {
+    // Should not happen, but handle gracefully
+    throw new Error('Idempotency conflict but no existing event found');
+  }
+
+  return {
+    acquired: false,
+    event: toRow(existing),
+    status: existing.status as 'PENDING' | 'COMPLETED' | 'FAILED',
+  };
+}
+
+/**
+ * Validate that an existing idempotency event matches the current operation.
+ */
+export function validateIdempotencyIdentity(
+  event: AppEventRow,
+  expected: IdempotencyIdentity
+): boolean {
+  return (
+    event.event_type === expected.eventType &&
+    event.user_address === expected.userAddress &&
+    event.market_id === expected.marketId
+  );
+}
+
+/**
+ * Complete an idempotency event with result payload.
+ */
+export async function completeIdempotencyEvent(
+  eventId: string,
+  result: Record<string, unknown>
+): Promise<void> {
+  await db
+    .update(appEvents)
+    .set({
+      status: 'COMPLETED',
+      payload: result,
+      updatedAt: new Date(),
+    })
+    .where(eq(appEvents.id, eventId));
+}
