@@ -6,6 +6,7 @@
  * All database operations are async (Drizzle + Neon).
  */
 
+import Decimal from 'decimal.js';
 import { getClient } from '../xrpl/client';
 import { getBackendWallet, getIssuerAddress, getBackendAddress } from '../xrpl/wallet';
 import {
@@ -43,7 +44,25 @@ import {
   allocateRepayment,
   calculateLiquidationCollateral,
   calculateTotalDebt,
+  calculateAccruedSupplyYield,
 } from './calculations';
+import {
+  addToTotalBorrowed,
+  getAvailableLiquidity,
+  getPoolMetrics,
+  removeFromTotalBorrowed,
+  addToTotalSupplied,
+  removeFromTotalSupplied,
+  updateGlobalYieldIndex,
+} from './pool';
+import {
+  addSupply,
+  accrueSupplyYield,
+  checkpointSupplyYield,
+  getOrCreateSupplyPosition,
+  getSupplyPositionForUser,
+  removeSupply,
+} from './supply';
 import {
   LENDING_EVENTS,
   Market,
@@ -54,15 +73,38 @@ import {
   RepayResult,
   WithdrawResult,
   LiquidationResult,
+  SupplyResult,
+  CollectYieldResult,
+  WithdrawSupplyResult,
+  SupplyPosition,
+  SupplyPositionMetrics,
+  PoolMetrics,
 } from './types';
+import { getTokenCode } from '../xrpl/currency-codes';
 
 export interface LendingServiceError {
   code: string;
   message: string;
 }
 
+Decimal.set({ precision: 28, rounding: Decimal.ROUND_DOWN });
+
+const TOKEN_SCALE = 8;
+
 function createError(code: string, message: string): LendingServiceError {
   return { code, message };
+}
+
+function toAmount(value: Decimal.Value): number {
+  return new Decimal(value).toDecimalPlaces(TOKEN_SCALE, Decimal.ROUND_DOWN).toNumber();
+}
+
+function normalizeCurrencyCode(currency: string): string {
+  return (getTokenCode(currency) || currency).toUpperCase();
+}
+
+function isExpectedCurrency(actual: string, expected: string): boolean {
+  return normalizeCurrencyCode(actual) === normalizeCurrencyCode(expected);
 }
 
 function reconstructResult<T>(event: AppEventRow): T | null {
@@ -122,6 +164,31 @@ function buildOutboundRawTxJson(params: {
     validated: true,
     txResult: tx.result,
     captureMode: 'minimal',
+  };
+}
+
+type MarketRecord = NonNullable<Awaited<ReturnType<typeof getMarketById>>>;
+
+function mapMarketRecordToDomain(market: MarketRecord): Market {
+  return {
+    id: market.id,
+    name: market.name,
+    collateralCurrency: market.collateral_currency,
+    collateralIssuer: market.collateral_issuer,
+    debtCurrency: market.debt_currency,
+    debtIssuer: market.debt_issuer,
+    maxLtvRatio: market.max_ltv_ratio,
+    liquidationLtvRatio: market.liquidation_ltv_ratio,
+    baseInterestRate: market.base_interest_rate,
+    liquidationPenalty: market.liquidation_penalty,
+    minCollateralAmount: market.min_collateral_amount,
+    minBorrowAmount: market.min_borrow_amount,
+    minSupplyAmount: market.min_supply_amount,
+    totalSupplied: market.total_supplied,
+    totalBorrowed: market.total_borrowed,
+    globalYieldIndex: market.global_yield_index,
+    reserveFactor: market.reserve_factor,
+    lastIndexUpdate: market.last_index_update,
   };
 }
 
@@ -187,7 +254,7 @@ export async function processDeposit(
       return { error: createError('NO_AMOUNT', 'Could not determine transaction amount') };
     }
 
-    if (tx.amount.currency !== market.collateral_currency) {
+    if (!isExpectedCurrency(tx.amount.currency, market.collateral_currency)) {
       await updateEventStatus(event.id, 'FAILED', {
         code: 'WRONG_CURRENCY',
         message: `Expected ${market.collateral_currency}`,
@@ -392,6 +459,16 @@ export async function processBorrow(
     };
   }
 
+  const availableLiquidity = await getAvailableLiquidity(marketId);
+  if (amount > availableLiquidity) {
+    return {
+      error: createError(
+        'INSUFFICIENT_POOL_LIQUIDITY',
+        `Borrow amount exceeds pool liquidity (${availableLiquidity} ${market.debt_currency})`
+      ),
+    };
+  }
+
   try {
     // Send debt tokens to user
     const client = await getClient();
@@ -434,6 +511,8 @@ export async function processBorrow(
     });
 
     // Update position
+    await updateGlobalYieldIndex(marketId);
+    await addToTotalBorrowed(marketId, amount);
     const finalPosition = await addLoanPrincipal(position.id, amount);
 
     const borrowResult: BorrowResult = {
@@ -531,7 +610,7 @@ export async function processRepay(
       return { error: createError('NO_AMOUNT', 'Could not determine transaction amount') };
     }
 
-    if (tx.amount.currency !== market.debt_currency) {
+    if (!isExpectedCurrency(tx.amount.currency, market.debt_currency)) {
       await updateEventStatus(event.id, 'FAILED', { code: 'WRONG_CURRENCY', message: 'Wrong currency' });
       return {
         error: createError(
@@ -591,6 +670,10 @@ export async function processRepay(
     });
 
     // Apply repayment
+    await updateGlobalYieldIndex(marketId);
+    if (principalPaid > 0) {
+      await removeFromTotalBorrowed(marketId, principalPaid);
+    }
     const finalPosition = await applyRepayment(position.id, interestPaid, principalPaid);
     const remainingDebt = calculateTotalDebt(finalPosition.loanPrincipal, finalPosition.interestAccrued);
 
@@ -891,6 +974,10 @@ export async function processLiquidation(
       const penalty = actualSeized * market.liquidation_penalty;
 
       // Mark position as liquidated
+      if (updatedPosition.loanPrincipal > 0) {
+        await updateGlobalYieldIndex(marketId);
+        await removeFromTotalBorrowed(marketId, updatedPosition.loanPrincipal);
+      }
       await markLiquidated(position.id);
 
       // Update event
@@ -942,20 +1029,7 @@ export async function getPositionWithMetrics(
     return null;
   }
 
-  const marketData: Market = {
-    id: market.id,
-    name: market.name,
-    collateralCurrency: market.collateral_currency,
-    collateralIssuer: market.collateral_issuer,
-    debtCurrency: market.debt_currency,
-    debtIssuer: market.debt_issuer,
-    maxLtvRatio: market.max_ltv_ratio,
-    liquidationLtvRatio: market.liquidation_ltv_ratio,
-    baseInterestRate: market.base_interest_rate,
-    liquidationPenalty: market.liquidation_penalty,
-    minCollateralAmount: market.min_collateral_amount,
-    minBorrowAmount: market.min_borrow_amount,
-  };
+  const marketData = mapMarketRecordToDomain(market);
 
   const metrics = calculatePositionMetrics(
     position,
@@ -965,4 +1039,664 @@ export async function getPositionWithMetrics(
   );
 
   return { position, metrics, market: marketData };
+}
+
+function buildSupplyPositionMetrics(position: SupplyPosition, pool: PoolMetrics): SupplyPositionMetrics {
+  const accruedYield = toAmount(accrueSupplyYield(position, pool.globalYieldIndex));
+  const withdrawableAmount = toAmount(new Decimal(position.supplyAmount).add(accruedYield));
+
+  return {
+    accruedYield,
+    withdrawableAmount,
+    availableLiquidity: pool.availableLiquidity,
+    utilizationRate: pool.utilizationRate,
+    supplyApr: pool.supplyApr,
+    supplyApy: pool.supplyApy,
+  };
+}
+
+/**
+ * Verify and process a supplier liquidity transaction.
+ */
+export async function processSupply(
+  txHash: string,
+  senderAddress: string,
+  marketId: string,
+  idempotencyKey?: string
+): Promise<{ result?: SupplyResult; error?: LendingServiceError }> {
+  const market = await getMarketById(marketId);
+  if (!market) {
+    return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
+  }
+
+  let event: AppEventRow;
+
+  if (idempotencyKey) {
+    const acquireResult = await acquireIdempotencyKey({
+      eventType: LENDING_EVENTS.SUPPLY_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress: senderAddress,
+      marketId,
+      idempotencyKey,
+      currency: market.debt_currency,
+      payload: { txHash },
+    });
+
+    if (!acquireResult.acquired) {
+      const existingEvent = acquireResult.event;
+
+      if (!validateIdempotencyIdentity(existingEvent, {
+        eventType: LENDING_EVENTS.SUPPLY_INITIATED,
+        userAddress: senderAddress,
+        marketId,
+      })) {
+        return { error: createError('IDEMPOTENCY_MISMATCH', 'Idempotency key used for different operation') };
+      }
+
+      if (acquireResult.status === 'COMPLETED') {
+        const storedResult = reconstructResult<SupplyResult>(existingEvent);
+        if (storedResult) {
+          return { result: storedResult };
+        }
+
+        return { error: createError('ALREADY_COMPLETED', 'Operation completed but result unavailable') };
+      }
+
+      if (acquireResult.status === 'PENDING') {
+        return { error: createError('OPERATION_IN_PROGRESS', 'Operation already in progress') };
+      }
+
+      event = existingEvent;
+      await updateEventStatus(event.id, 'PENDING');
+    } else {
+      event = acquireResult.event;
+    }
+  } else {
+    event = await emitAppEvent({
+      eventType: LENDING_EVENTS.SUPPLY_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress: senderAddress,
+      marketId,
+      currency: market.debt_currency,
+      payload: { txHash },
+    });
+  }
+
+  if (await isTransactionProcessed(txHash)) {
+    await updateEventStatus(event.id, 'FAILED', {
+      code: 'TX_ALREADY_PROCESSED',
+      message: 'This transaction has already been processed',
+    });
+    return { error: createError('TX_ALREADY_PROCESSED', 'This transaction has already been processed') };
+  }
+
+  try {
+    const client = await getClient();
+    const tx = await verifyTransaction(client, txHash);
+
+    if (!tx.validated) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'TX_NOT_VALIDATED', message: 'Transaction not validated' });
+      return { error: createError('TX_NOT_VALIDATED', 'Transaction not yet validated') };
+    }
+
+    if (tx.transactionType !== 'Payment') {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'NOT_PAYMENT',
+        message: `Expected Payment, got ${tx.transactionType}`,
+      });
+      return { error: createError('NOT_PAYMENT', `Expected Payment, got ${tx.transactionType}`) };
+    }
+
+    const backendAddress = getBackendAddress();
+    if (tx.destination !== backendAddress) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_DESTINATION',
+        message: `Transaction must be sent to ${backendAddress}`,
+      });
+      return { error: createError('WRONG_DESTINATION', `Transaction must be sent to ${backendAddress}`) };
+    }
+
+    if (!tx.amount) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'NO_AMOUNT', message: 'Could not determine amount' });
+      return { error: createError('NO_AMOUNT', 'Could not determine transaction amount') };
+    }
+
+    if (!isExpectedCurrency(tx.amount.currency, market.debt_currency)) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_CURRENCY',
+        message: `Expected ${market.debt_currency}, got ${tx.amount.currency}`,
+      });
+      return {
+        error: createError('WRONG_CURRENCY', `Expected ${market.debt_currency}, got ${tx.amount.currency}`),
+      };
+    }
+
+    if (tx.amount.currency !== 'XRP' && tx.amount.issuer !== market.debt_issuer) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_ISSUER',
+        message: `Expected issuer ${market.debt_issuer}, got ${tx.amount.issuer}`,
+      });
+      return {
+        error: createError('WRONG_ISSUER', `Expected issuer ${market.debt_issuer}, got ${tx.amount.issuer}`),
+      };
+    }
+
+    if (tx.source !== senderAddress) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'SENDER_MISMATCH', message: 'Sender mismatch' });
+      return { error: createError('SENDER_MISMATCH', 'Transaction sender does not match') };
+    }
+
+    const amount = parseFloat(tx.amount.value);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'INVALID_AMOUNT',
+        message: 'Supply amount must be positive',
+      });
+      return { error: createError('INVALID_AMOUNT', 'Supply amount must be positive') };
+    }
+
+    if (amount < market.min_supply_amount) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'BELOW_MINIMUM',
+        message: `Minimum supply is ${market.min_supply_amount} ${market.debt_currency}`,
+      });
+      return {
+        error: createError(
+          'BELOW_MINIMUM',
+          `Minimum supply is ${market.min_supply_amount} ${market.debt_currency}`
+        ),
+      };
+    }
+
+    const onchainTx = await upsertOnchainTransaction({
+      txHash,
+      validated: tx.validated,
+      txType: tx.transactionType,
+      sourceAddress: tx.source,
+      destinationAddress: tx.destination,
+      currency: tx.amount.currency,
+      issuer: tx.amount.issuer,
+      amount,
+      rawTxJson: {
+        ...buildInboundRawTxJson(tx),
+        operation: 'SUPPLY',
+      },
+      rawMetaJson: tx.rawMeta || null,
+    });
+
+    const { globalYieldIndex } = await updateGlobalYieldIndex(marketId);
+    const supplyPosition = await getOrCreateSupplyPosition(
+      senderAddress,
+      marketId,
+      globalYieldIndex
+    );
+    const updatedSupplyPosition = await addSupply(supplyPosition.id, amount, globalYieldIndex);
+    await addToTotalSupplied(marketId, amount);
+
+    const supplyResult: SupplyResult = {
+      marketId,
+      supplyPositionId: updatedSupplyPosition.id,
+      suppliedAmount: amount,
+    };
+
+    if (idempotencyKey) {
+      await completeIdempotencyEvent(event.id, { result: supplyResult });
+    } else {
+      await updateEventStatus(event.id, 'COMPLETED');
+    }
+
+    await emitAppEvent({
+      eventType: LENDING_EVENTS.SUPPLY_CONFIRMED,
+      module: 'LENDING',
+      status: 'COMPLETED',
+      userAddress: senderAddress,
+      marketId,
+      onchainTxId: onchainTx.id,
+      amount,
+      currency: market.debt_currency,
+      payload: {
+        txHash,
+        supplyPositionId: updatedSupplyPosition.id,
+      },
+    });
+
+    return { result: supplyResult };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    await updateEventStatus(event.id, 'FAILED', { code: 'SUPPLY_FAILED', message });
+    return { error: createError('SUPPLY_FAILED', message) };
+  }
+}
+
+/**
+ * Collect accrued supplier yield and transfer to lender wallet.
+ */
+export async function processCollectYield(
+  userAddress: string,
+  marketId: string,
+  idempotencyKey?: string
+): Promise<{ result?: CollectYieldResult; error?: LendingServiceError }> {
+  const market = await getMarketById(marketId);
+  if (!market) {
+    return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
+  }
+
+  let event: AppEventRow;
+
+  if (idempotencyKey) {
+    const acquireResult = await acquireIdempotencyKey({
+      eventType: LENDING_EVENTS.COLLECT_YIELD_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      idempotencyKey,
+      currency: market.debt_currency,
+      payload: {},
+    });
+
+    if (!acquireResult.acquired) {
+      const existingEvent = acquireResult.event;
+
+      if (!validateIdempotencyIdentity(existingEvent, {
+        eventType: LENDING_EVENTS.COLLECT_YIELD_INITIATED,
+        userAddress,
+        marketId,
+      })) {
+        return { error: createError('IDEMPOTENCY_MISMATCH', 'Idempotency key used for different operation') };
+      }
+
+      if (acquireResult.status === 'COMPLETED') {
+        const storedResult = reconstructResult<CollectYieldResult>(existingEvent);
+        if (storedResult) {
+          return { result: storedResult };
+        }
+
+        return { error: createError('ALREADY_COMPLETED', 'Operation completed but result unavailable') };
+      }
+
+      if (acquireResult.status === 'PENDING') {
+        return { error: createError('OPERATION_IN_PROGRESS', 'Operation already in progress') };
+      }
+
+      event = existingEvent;
+      await updateEventStatus(event.id, 'PENDING');
+    } else {
+      event = acquireResult.event;
+    }
+  } else {
+    event = await emitAppEvent({
+      eventType: LENDING_EVENTS.COLLECT_YIELD_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      currency: market.debt_currency,
+    });
+  }
+
+  const position = await getSupplyPositionForUser(userAddress, marketId);
+  if (!position) {
+    await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
+    return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
+  }
+
+  try {
+    const { globalYieldIndex } = await updateGlobalYieldIndex(marketId);
+    const refreshedPosition = await getSupplyPositionForUser(userAddress, marketId);
+
+    if (!refreshedPosition) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
+      return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
+    }
+
+    const accruedYield = toAmount(calculateAccruedSupplyYield(
+      refreshedPosition.supplyAmount,
+      globalYieldIndex,
+      refreshedPosition.yieldIndex
+    ));
+
+    if (accruedYield <= 0) {
+      const zeroResult: CollectYieldResult = {
+        marketId,
+        supplyPositionId: refreshedPosition.id,
+        collectedAmount: 0,
+        txHash: null,
+      };
+
+      await checkpointSupplyYield(refreshedPosition.id, globalYieldIndex);
+
+      if (idempotencyKey) {
+        await completeIdempotencyEvent(event.id, { result: zeroResult });
+      } else {
+        await updateEventStatus(event.id, 'COMPLETED');
+      }
+
+      await emitAppEvent({
+        eventType: LENDING_EVENTS.COLLECT_YIELD_COMPLETED,
+        module: 'LENDING',
+        status: 'COMPLETED',
+        userAddress,
+        marketId,
+        amount: 0,
+        currency: market.debt_currency,
+        payload: { txHash: null, supplyPositionId: refreshedPosition.id },
+      });
+
+      return { result: zeroResult };
+    }
+
+    const client = await getClient();
+    const backendWallet = getBackendWallet();
+    const tx = await sendToken(
+      client,
+      backendWallet,
+      userAddress,
+      market.debt_currency,
+      accruedYield.toString(),
+      market.debt_issuer
+    );
+
+    if (tx.result !== 'tesSUCCESS') {
+      await updateEventStatus(event.id, 'FAILED', { code: 'TX_FAILED', message: tx.result });
+      return { error: createError('TX_FAILED', `Failed to send tokens: ${tx.result}`) };
+    }
+
+    const onchainTx = await upsertOnchainTransaction({
+      txHash: tx.hash,
+      validated: true,
+      txType: tx.transactionType ?? 'Payment',
+      sourceAddress: backendWallet.address,
+      destinationAddress: userAddress,
+      currency: market.debt_currency,
+      issuer: market.debt_issuer,
+      amount: accruedYield,
+      rawTxJson: {
+        ...buildOutboundRawTxJson({
+          tx,
+          sourceAddress: backendWallet.address,
+          destinationAddress: userAddress,
+          currency: market.debt_currency,
+          issuer: market.debt_issuer,
+          amount: accruedYield,
+        }),
+        operation: 'COLLECT_YIELD',
+      },
+      rawMetaJson: tx.rawMeta || null,
+    });
+
+    await checkpointSupplyYield(refreshedPosition.id, globalYieldIndex);
+
+    const collectResult: CollectYieldResult = {
+      marketId,
+      supplyPositionId: refreshedPosition.id,
+      collectedAmount: accruedYield,
+      txHash: tx.hash,
+    };
+
+    if (idempotencyKey) {
+      await completeIdempotencyEvent(event.id, { result: collectResult });
+    } else {
+      await updateEventStatus(event.id, 'COMPLETED');
+    }
+
+    await emitAppEvent({
+      eventType: LENDING_EVENTS.COLLECT_YIELD_COMPLETED,
+      module: 'LENDING',
+      status: 'COMPLETED',
+      userAddress,
+      marketId,
+      onchainTxId: onchainTx.id,
+      amount: accruedYield,
+      currency: market.debt_currency,
+      payload: { txHash: tx.hash, supplyPositionId: refreshedPosition.id },
+    });
+
+    return { result: collectResult };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    await updateEventStatus(event.id, 'FAILED', { code: 'COLLECT_YIELD_FAILED', message });
+    return { error: createError('COLLECT_YIELD_FAILED', message) };
+  }
+}
+
+/**
+ * Withdraw supplied principal from the lending pool.
+ */
+export async function processWithdrawSupply(
+  userAddress: string,
+  marketId: string,
+  amount: number,
+  idempotencyKey?: string
+): Promise<{ result?: WithdrawSupplyResult; error?: LendingServiceError }> {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: createError('INVALID_AMOUNT', 'Amount must be a positive number') };
+  }
+
+  const market = await getMarketById(marketId);
+  if (!market) {
+    return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
+  }
+
+  let event: AppEventRow;
+
+  if (idempotencyKey) {
+    const acquireResult = await acquireIdempotencyKey({
+      eventType: LENDING_EVENTS.WITHDRAW_SUPPLY_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      idempotencyKey,
+      amount,
+      currency: market.debt_currency,
+      payload: {},
+    });
+
+    if (!acquireResult.acquired) {
+      const existingEvent = acquireResult.event;
+
+      if (!validateIdempotencyIdentity(existingEvent, {
+        eventType: LENDING_EVENTS.WITHDRAW_SUPPLY_INITIATED,
+        userAddress,
+        marketId,
+      })) {
+        return { error: createError('IDEMPOTENCY_MISMATCH', 'Idempotency key used for different operation') };
+      }
+
+      if (acquireResult.status === 'COMPLETED') {
+        const storedResult = reconstructResult<WithdrawSupplyResult>(existingEvent);
+        if (storedResult) {
+          return { result: storedResult };
+        }
+
+        return { error: createError('ALREADY_COMPLETED', 'Operation completed but result unavailable') };
+      }
+
+      if (acquireResult.status === 'PENDING') {
+        return { error: createError('OPERATION_IN_PROGRESS', 'Operation already in progress') };
+      }
+
+      event = existingEvent;
+      await updateEventStatus(event.id, 'PENDING');
+    } else {
+      event = acquireResult.event;
+    }
+  } else {
+    event = await emitAppEvent({
+      eventType: LENDING_EVENTS.WITHDRAW_SUPPLY_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      amount,
+      currency: market.debt_currency,
+    });
+  }
+
+  const position = await getSupplyPositionForUser(userAddress, marketId);
+  if (!position) {
+    await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
+    return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
+  }
+
+  try {
+    const { globalYieldIndex } = await updateGlobalYieldIndex(marketId);
+    const refreshedPosition = await getSupplyPositionForUser(userAddress, marketId);
+    if (!refreshedPosition) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
+      return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
+    }
+
+    const accruedYield = toAmount(calculateAccruedSupplyYield(
+      refreshedPosition.supplyAmount,
+      globalYieldIndex,
+      refreshedPosition.yieldIndex
+    ));
+
+    if (amount > refreshedPosition.supplyAmount) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'EXCEEDS_SUPPLIED_PRINCIPAL',
+        message: 'Withdraw amount exceeds supplied principal',
+      });
+      return { error: createError('EXCEEDS_SUPPLIED_PRINCIPAL', 'Withdraw amount exceeds supplied principal') };
+    }
+
+    if (amount === refreshedPosition.supplyAmount && accruedYield > 0) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'COLLECT_YIELD_FIRST',
+        message: 'Collect accrued yield before withdrawing full principal',
+      });
+      return {
+        error: createError(
+          'COLLECT_YIELD_FIRST',
+          'Collect accrued yield before withdrawing full principal'
+        ),
+      };
+    }
+
+    const availableLiquidity = await getAvailableLiquidity(marketId);
+    if (amount > availableLiquidity) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'INSUFFICIENT_POOL_LIQUIDITY',
+        message: 'Insufficient pool liquidity',
+      });
+      return { error: createError('INSUFFICIENT_POOL_LIQUIDITY', 'Insufficient pool liquidity') };
+    }
+
+    const client = await getClient();
+    const backendWallet = getBackendWallet();
+    const tx = await sendToken(
+      client,
+      backendWallet,
+      userAddress,
+      market.debt_currency,
+      amount.toString(),
+      market.debt_issuer
+    );
+
+    if (tx.result !== 'tesSUCCESS') {
+      await updateEventStatus(event.id, 'FAILED', { code: 'TX_FAILED', message: tx.result });
+      return { error: createError('TX_FAILED', `Failed to send tokens: ${tx.result}`) };
+    }
+
+    const onchainTx = await upsertOnchainTransaction({
+      txHash: tx.hash,
+      validated: true,
+      txType: tx.transactionType ?? 'Payment',
+      sourceAddress: backendWallet.address,
+      destinationAddress: userAddress,
+      currency: market.debt_currency,
+      issuer: market.debt_issuer,
+      amount,
+      rawTxJson: {
+        ...buildOutboundRawTxJson({
+          tx,
+          sourceAddress: backendWallet.address,
+          destinationAddress: userAddress,
+          currency: market.debt_currency,
+          issuer: market.debt_issuer,
+          amount,
+        }),
+        operation: 'WITHDRAW_SUPPLY',
+      },
+      rawMetaJson: tx.rawMeta || null,
+    });
+
+    const updatedPosition = await removeSupply(refreshedPosition.id, amount, globalYieldIndex);
+    await removeFromTotalSupplied(marketId, amount);
+
+    const withdrawResult: WithdrawSupplyResult = {
+      marketId,
+      supplyPositionId: updatedPosition.id,
+      withdrawnAmount: amount,
+      remainingSupply: updatedPosition.supplyAmount,
+      txHash: tx.hash,
+    };
+
+    if (idempotencyKey) {
+      await completeIdempotencyEvent(event.id, { result: withdrawResult });
+    } else {
+      await updateEventStatus(event.id, 'COMPLETED');
+    }
+
+    await emitAppEvent({
+      eventType: LENDING_EVENTS.WITHDRAW_SUPPLY_COMPLETED,
+      module: 'LENDING',
+      status: 'COMPLETED',
+      userAddress,
+      marketId,
+      onchainTxId: onchainTx.id,
+      amount,
+      currency: market.debt_currency,
+      payload: { txHash: tx.hash, supplyPositionId: updatedPosition.id },
+    });
+
+    return { result: withdrawResult };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    await updateEventStatus(event.id, 'FAILED', { code: 'WITHDRAW_SUPPLY_FAILED', message });
+    return { error: createError('WITHDRAW_SUPPLY_FAILED', message) };
+  }
+}
+
+/**
+ * Return a supplier position with derived pool and yield metrics.
+ */
+export async function getSupplyPositionWithMetrics(
+  userAddress: string,
+  marketId: string
+): Promise<{
+  position: SupplyPosition;
+  metrics: SupplyPositionMetrics;
+  pool: PoolMetrics;
+  market: Market;
+} | null> {
+  const market = await getMarketById(marketId);
+  if (!market) {
+    return null;
+  }
+
+  await updateGlobalYieldIndex(marketId);
+
+  const position = await getSupplyPositionForUser(userAddress, marketId);
+  if (!position) {
+    return null;
+  }
+
+  const pool = await getPoolMetrics(marketId);
+  if (!pool) {
+    return null;
+  }
+
+  const metrics = buildSupplyPositionMetrics(position, pool);
+
+  return {
+    position,
+    metrics,
+    pool,
+    market: mapMarketRecordToDomain(market),
+  };
 }

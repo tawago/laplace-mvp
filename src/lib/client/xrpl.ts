@@ -1,4 +1,5 @@
 import { Client, Wallet } from 'xrpl';
+import { getTokenCode } from '@/lib/xrpl/currency-codes';
 
 const TESTNET_URL = process.env.NEXT_PUBLIC_TESTNET_URL || 'wss://s.altnet.rippletest.net:51233';
 
@@ -42,6 +43,17 @@ export function generateWallet(): WalletInfo {
 }
 
 /**
+ * Rebuild wallet info from an existing seed
+ */
+export function getWalletFromSeed(seed: string): WalletInfo {
+  const wallet = Wallet.fromSeed(seed);
+  return {
+    address: wallet.address,
+    seed,
+  };
+}
+
+/**
  * Fund a wallet from the testnet faucet
  */
 export async function fundWalletFromFaucet(address: string): Promise<{ funded: boolean; balance: string }> {
@@ -77,12 +89,13 @@ export async function submitTrustLine(
 ): Promise<{ hash: string; result: string }> {
   const client = await getClientBrowser();
   const wallet = Wallet.fromSeed(seed);
+  const normalizedCurrency = getTokenCode(currency) || currency;
 
   const tx = await client.submitAndWait({
     TransactionType: 'TrustSet',
     Account: wallet.address,
     LimitAmount: {
-      currency,
+      currency: normalizedCurrency,
       issuer,
       value: limit,
     },
@@ -113,13 +126,14 @@ export async function sendTokenToBackend(
 ): Promise<{ hash: string; result: string }> {
   const client = await getClientBrowser();
   const wallet = Wallet.fromSeed(seed);
+  const normalizedCurrency = getTokenCode(currency) || currency;
 
   const tx = await client.submitAndWait({
     TransactionType: 'Payment',
     Account: wallet.address,
     Destination: backendAddress,
     Amount: {
-      currency,
+      currency: normalizedCurrency,
       issuer,
       value: amount,
     },
@@ -161,6 +175,7 @@ export async function checkTrustLine(
   currency: string
 ): Promise<boolean> {
   const client = await getClientBrowser();
+  const normalizedCurrency = getTokenCode(currency) || currency;
 
   try {
     const result = await client.request({
@@ -169,7 +184,7 @@ export async function checkTrustLine(
       peer: issuer,
     });
 
-    return result.result.lines.some(line => line.currency === currency);
+    return result.result.lines.some(line => line.currency.toUpperCase() === normalizedCurrency.toUpperCase());
   } catch {
     return false;
   }

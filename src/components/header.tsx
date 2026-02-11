@@ -4,10 +4,16 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LoginDialog } from '@/components/login-dialog';
 import { UserMenu } from '@/components/user-menu';
-import { Menu, X, Wallet } from 'lucide-react';
+import { ChevronDown, Menu, X, Wallet } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 
 export function Header() {
@@ -44,9 +50,25 @@ export function Header() {
           <Link href="/wallet" className="text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300">
             Wallet
           </Link>
-          <Link href="/lending" className="text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300">
-            Lending
-          </Link>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex items-center gap-1 text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300">
+                Finance
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-40">
+              <DropdownMenuItem asChild>
+                <Link href="/borrow">Borrow</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/lend">Lend</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/admin">Admin</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Link href="/about" className="text-sm font-medium hover:text-zinc-600 dark:hover:text-zinc-300">
             About
           </Link>
@@ -117,13 +139,32 @@ export function Header() {
             >
               Wallet
             </Link>
-            <Link
-              href="/lending"
-              className="block rounded-lg px-3 py-2 text-base font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Lending
-            </Link>
+            <details className="rounded-lg px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+              <summary className="cursor-pointer text-base font-medium">Finance</summary>
+              <div className="mt-2 space-y-1 pl-2">
+                <Link
+                  href="/borrow"
+                  className="block rounded-md px-2 py-1 text-sm font-medium hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Borrow
+                </Link>
+                <Link
+                  href="/lend"
+                  className="block rounded-md px-2 py-1 text-sm font-medium hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Lend
+                </Link>
+                <Link
+                  href="/admin"
+                  className="block rounded-md px-2 py-1 text-sm font-medium hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Admin
+                </Link>
+              </div>
+            </details>
             <Link
               href="/about"
               className="block rounded-lg px-3 py-2 text-base font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800"

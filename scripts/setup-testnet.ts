@@ -4,8 +4,8 @@
  * This script:
  * 1. Creates and funds wallets (issuer, backend) from the testnet faucet
  * 2. Enables rippling on the issuer account
- * 3. Creates trust lines from backend to issuer for both tokens
- * 4. Issues initial RWD tokens to the backend wallet
+ * 3. Creates trust lines from backend to issuer for all protocol tokens
+ * 4. Issues initial protocol tokens to the backend wallet
  * 5. Automatically updates .env.local with the new credentials
  *
  * NOTE: This script does NOT initialize the database.
@@ -18,12 +18,16 @@
 import { Client, Wallet, AccountSetAsfFlags } from 'xrpl';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TOKEN_CODE_BY_SYMBOL } from '../src/lib/xrpl/currency-codes';
 
 const TESTNET_URL = 'wss://s.altnet.rippletest.net:51233';
-const TOKEN_A_CODE = 'TST';
-const TOKEN_B_CODE = 'RWD';
+const TOKEN_SAIL_CODE = TOKEN_CODE_BY_SYMBOL.SAIL;
+const TOKEN_NYRA_CODE = TOKEN_CODE_BY_SYMBOL.NYRA;
+const TOKEN_RLUSD_CODE = TOKEN_CODE_BY_SYMBOL.RLUSD;
 const TRUST_LIMIT = '1000000';
-const INITIAL_RWD_AMOUNT = '100000';
+const INITIAL_SAIL_AMOUNT = '100000';
+const INITIAL_NYRA_AMOUNT = '100000';
+const INITIAL_RLUSD_AMOUNT = '100000';
 
 const ENV_FILE_PATH = path.join(process.cwd(), '.env.local');
 
@@ -146,7 +150,7 @@ async function main() {
   const forceFlag = process.argv.includes('--force');
 
   console.log('='.repeat(60));
-  console.log('XRP Ledger Token Swap - Testnet Setup');
+  console.log('XRPL Lending Tokens - Testnet Setup');
   console.log('='.repeat(60));
   console.log();
 
@@ -191,18 +195,35 @@ async function main() {
 
     // 3. Create trust lines on backend wallet
     console.log('Setting up trust lines on backend wallet...');
-    await createTrustLine(client, backendWallet, issuerWallet.address, TOKEN_A_CODE, TRUST_LIMIT);
-    await createTrustLine(client, backendWallet, issuerWallet.address, TOKEN_B_CODE, TRUST_LIMIT);
+    await createTrustLine(client, backendWallet, issuerWallet.address, TOKEN_SAIL_CODE, TRUST_LIMIT);
+    await createTrustLine(client, backendWallet, issuerWallet.address, TOKEN_NYRA_CODE, TRUST_LIMIT);
+    await createTrustLine(client, backendWallet, issuerWallet.address, TOKEN_RLUSD_CODE, TRUST_LIMIT);
     console.log();
 
-    // 4. Issue initial RWD tokens to backend
+    // 4. Issue initial protocol tokens to backend
     console.log('Issuing initial tokens to backend...');
     await sendToken(
       client,
       issuerWallet,
       backendWallet.address,
-      TOKEN_B_CODE,
-      INITIAL_RWD_AMOUNT,
+      TOKEN_SAIL_CODE,
+      INITIAL_SAIL_AMOUNT,
+      issuerWallet.address
+    );
+    await sendToken(
+      client,
+      issuerWallet,
+      backendWallet.address,
+      TOKEN_NYRA_CODE,
+      INITIAL_NYRA_AMOUNT,
+      issuerWallet.address
+    );
+    await sendToken(
+      client,
+      issuerWallet,
+      backendWallet.address,
+      TOKEN_RLUSD_CODE,
+      INITIAL_RLUSD_AMOUNT,
       issuerWallet.address
     );
     console.log();
@@ -214,9 +235,9 @@ async function main() {
       BACKEND_WALLET_SEED: backendWallet.seed!,
       ISSUER_ADDRESS: issuerWallet.address,
       BACKEND_ADDRESS: backendWallet.address,
-      TOKEN_A_CODE,
-      TOKEN_B_CODE,
-      SWAP_RATE: '2',
+      TOKEN_SAIL_CODE,
+      TOKEN_NYRA_CODE,
+      TOKEN_RLUSD_CODE,
       NEXT_PUBLIC_TESTNET_URL: TESTNET_URL,
       NEXT_PUBLIC_TESTNET_EXPLORER: 'https://testnet.xrpl.org',
     });

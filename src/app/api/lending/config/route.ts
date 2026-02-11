@@ -26,6 +26,11 @@ export async function GET() {
           maxLtvRatio: market.max_ltv_ratio,
           liquidationLtvRatio: market.liquidation_ltv_ratio,
           baseInterestRate: market.base_interest_rate,
+          minSupplyAmount: market.min_supply_amount,
+          reserveFactor: market.reserve_factor,
+          totalSupplied: market.total_supplied,
+          totalBorrowed: market.total_borrowed,
+          globalYieldIndex: market.global_yield_index,
           prices: prices
             ? {
                 collateralPriceUsd: prices.collateralPriceUsd,

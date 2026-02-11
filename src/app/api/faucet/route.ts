@@ -2,13 +2,28 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getClient } from '@/lib/xrpl/client';
 import { getIssuerWallet, getIssuerAddress } from '@/lib/xrpl/wallet';
 import { sendToken, hasTrustLine } from '@/lib/xrpl/tokens';
+import { TOKEN_CODE_BY_SYMBOL } from '@/lib/xrpl/currency-codes';
 
-const TOKEN_A_CODE = process.env.TOKEN_A_CODE || 'TST';
-const FAUCET_AMOUNT = '100'; // Give 100 TST tokens
+const TOKENS = {
+  SAIL: {
+    code: TOKEN_CODE_BY_SYMBOL.SAIL,
+    amount: '100',
+  },
+  NYRA: {
+    code: TOKEN_CODE_BY_SYMBOL.NYRA,
+    amount: '100',
+  },
+  RLUSD: {
+    code: TOKEN_CODE_BY_SYMBOL.RLUSD,
+    amount: '10',
+  },
+} as const;
+
+type FaucetToken = keyof typeof TOKENS;
 
 export async function POST(request: NextRequest) {
   try {
-    const { userAddress } = await request.json();
+    const { userAddress, token } = await request.json();
 
     // 1. Validate inputs
     if (!userAddress) {
@@ -17,6 +32,16 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const normalizedToken = typeof token === 'string' ? token.toUpperCase() : 'SAIL';
+    if (!(normalizedToken in TOKENS)) {
+      return NextResponse.json(
+        { error: 'Unsupported token. Use SAIL, NYRA, or RLUSD.' },
+        { status: 400 }
+      );
+    }
+
+    const faucetToken = TOKENS[normalizedToken as FaucetToken];
 
     // Validate address format (basic check)
     if (!userAddress.startsWith('r') || userAddress.length < 25) {
@@ -31,28 +56,28 @@ export async function POST(request: NextRequest) {
     const issuerWallet = getIssuerWallet();
     const issuerAddress = getIssuerAddress();
 
-    // 3. Check if user has trust line for TST
-    const hasTrust = await hasTrustLine(client, userAddress, issuerAddress, TOKEN_A_CODE);
+    // 3. Check if user has trust line for token
+    const hasTrust = await hasTrustLine(client, userAddress, issuerAddress, faucetToken.code);
     if (!hasTrust) {
       return NextResponse.json(
-        { error: `User must first create a trust line for ${TOKEN_A_CODE}` },
+        { error: `User must first create a trust line for ${normalizedToken}` },
         { status: 400 }
       );
     }
 
-    // 4. Send TST tokens to user
+    // 4. Send tokens to user
     const tx = await sendToken(
       client,
       issuerWallet,
       userAddress,
-      TOKEN_A_CODE,
-      FAUCET_AMOUNT,
+      faucetToken.code,
+      faucetToken.amount,
       issuerAddress
     );
 
     if (tx.result !== 'tesSUCCESS') {
       return NextResponse.json(
-        { error: `Failed to send ${TOKEN_A_CODE}: ${tx.result}` },
+        { error: `Failed to send ${faucetToken.code}: ${tx.result}` },
         { status: 500 }
       );
     }
@@ -60,8 +85,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       txHash: tx.hash,
-      amount: FAUCET_AMOUNT,
-      token: TOKEN_A_CODE,
+      amount: faucetToken.amount,
+      token: normalizedToken,
     });
 
   } catch (error) {

@@ -21,6 +21,7 @@ import {
 
 // Enums
 export const positionStatusEnum = pgEnum('position_status', ['ACTIVE', 'LIQUIDATED', 'CLOSED']);
+export const supplyPositionStatusEnum = pgEnum('supply_position_status', ['ACTIVE', 'CLOSED']);
 export const eventModuleEnum = pgEnum('event_module', ['SWAP', 'LENDING', 'FAUCET', 'TRUST', 'SYSTEM']);
 export const eventStatusEnum = pgEnum('event_status', ['PENDING', 'COMPLETED', 'FAILED']);
 export const assetSideEnum = pgEnum('asset_side', ['COLLATERAL', 'DEBT']);
@@ -55,6 +56,12 @@ export const markets = pgTable(
     liquidationPenalty: numeric('liquidation_penalty', { precision: 10, scale: 6 }).notNull(),
     minCollateralAmount: numeric('min_collateral_amount', { precision: 20, scale: 8 }).notNull(),
     minBorrowAmount: numeric('min_borrow_amount', { precision: 20, scale: 8 }).notNull(),
+    minSupplyAmount: numeric('min_supply_amount', { precision: 20, scale: 8 }).notNull().default('5'),
+    totalSupplied: numeric('total_supplied', { precision: 20, scale: 8 }).notNull().default('0'),
+    totalBorrowed: numeric('total_borrowed', { precision: 20, scale: 8 }).notNull().default('0'),
+    globalYieldIndex: numeric('global_yield_index', { precision: 20, scale: 18 }).notNull().default('1.0'),
+    lastIndexUpdate: timestamp('last_index_update', { withTimezone: true }).notNull().defaultNow(),
+    reserveFactor: numeric('reserve_factor', { precision: 10, scale: 6 }).notNull().default('0.1'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -62,6 +69,39 @@ export const markets = pgTable(
   (table) => ({
     idxMarketsName: index('idx_markets_name').on(table.name),
     idxMarketsIsActive: index('idx_markets_is_active').on(table.isActive),
+  })
+);
+
+// Supply positions table
+export const supplyPositions = pgTable(
+  'supply_positions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    marketId: uuid('market_id')
+      .notNull()
+      .references(() => markets.id),
+    status: supplyPositionStatusEnum('status').notNull().default('ACTIVE'),
+    supplyAmount: numeric('supply_amount', { precision: 20, scale: 8 }).notNull().default('0'),
+    yieldIndex: numeric('yield_index', { precision: 20, scale: 18 }).notNull().default('1.0'),
+    lastYieldUpdate: timestamp('last_yield_update', { withTimezone: true }).notNull().defaultNow(),
+    suppliedAt: timestamp('supplied_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    supplyPositionsUserMarketUnique: unique('supply_positions_user_market_unique').on(
+      table.userId,
+      table.marketId
+    ),
+    idxSupplyPositionsMarketStatus: index('idx_supply_positions_market_status').on(
+      table.marketId,
+      table.status
+    ),
+    idxSupplyPositionsUserStatus: index('idx_supply_positions_user_status').on(table.userId, table.status),
   })
 );
 
@@ -189,6 +229,9 @@ export type NewMarket = typeof markets.$inferInsert;
 
 export type Position = typeof positions.$inferSelect;
 export type NewPosition = typeof positions.$inferInsert;
+
+export type SupplyPosition = typeof supplyPositions.$inferSelect;
+export type NewSupplyPosition = typeof supplyPositions.$inferInsert;
 
 export type OnchainTransaction = typeof onchainTransactions.$inferSelect;
 export type NewOnchainTransaction = typeof onchainTransactions.$inferInsert;

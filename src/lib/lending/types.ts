@@ -3,6 +3,7 @@
  */
 
 export type PositionStatus = 'ACTIVE' | 'LIQUIDATED' | 'CLOSED';
+export type SupplyPositionStatus = 'ACTIVE' | 'CLOSED';
 
 export type EventModule = 'SWAP' | 'LENDING' | 'FAUCET' | 'TRUST' | 'SYSTEM';
 
@@ -21,6 +22,12 @@ export interface Market {
   liquidationPenalty: number;
   minCollateralAmount: number;
   minBorrowAmount: number;
+  minSupplyAmount?: number;
+  totalSupplied?: number;
+  totalBorrowed?: number;
+  globalYieldIndex?: number;
+  reserveFactor?: number;
+  lastIndexUpdate?: Date;
 }
 
 export interface Position {
@@ -38,6 +45,20 @@ export interface Position {
   liquidatedAt: Date | null;
 }
 
+export interface SupplyPosition {
+  id: string;
+  userId: string;
+  marketId: string;
+  status: SupplyPositionStatus;
+  supplyAmount: number;
+  yieldIndex: number;
+  lastYieldUpdate: Date;
+  suppliedAt: Date;
+  closedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface PositionMetrics {
   totalDebt: number;
   collateralValueUsd: number;
@@ -47,6 +68,29 @@ export interface PositionMetrics {
   liquidatable: boolean;
   maxBorrowableAmount: number;
   maxWithdrawableAmount: number;
+}
+
+export interface PoolMetrics {
+  marketId: string;
+  totalSupplied: number;
+  totalBorrowed: number;
+  availableLiquidity: number;
+  utilizationRate: number;
+  borrowApr: number;
+  supplyApr: number;
+  supplyApy: number;
+  globalYieldIndex: number;
+  reserveFactor: number;
+  lastIndexUpdate: Date;
+}
+
+export interface SupplyPositionMetrics {
+  accruedYield: number;
+  withdrawableAmount: number;
+  availableLiquidity: number;
+  utilizationRate: number;
+  supplyApr: number;
+  supplyApy: number;
 }
 
 export interface OnchainTransaction {
@@ -104,6 +148,15 @@ export const LENDING_EVENTS = {
   LIQUIDATION_COMPLETED: 'LENDING_LIQUIDATION_COMPLETED',
   LIQUIDATION_FAILED: 'LENDING_LIQUIDATION_FAILED',
   INTEREST_ACCRUED: 'LENDING_INTEREST_ACCRUED',
+  SUPPLY_INITIATED: 'LENDING_SUPPLY_INITIATED',
+  SUPPLY_CONFIRMED: 'LENDING_SUPPLY_CONFIRMED',
+  SUPPLY_FAILED: 'LENDING_SUPPLY_FAILED',
+  COLLECT_YIELD_INITIATED: 'LENDING_COLLECT_YIELD_INITIATED',
+  COLLECT_YIELD_COMPLETED: 'LENDING_COLLECT_YIELD_COMPLETED',
+  COLLECT_YIELD_FAILED: 'LENDING_COLLECT_YIELD_FAILED',
+  WITHDRAW_SUPPLY_INITIATED: 'LENDING_WITHDRAW_SUPPLY_INITIATED',
+  WITHDRAW_SUPPLY_COMPLETED: 'LENDING_WITHDRAW_SUPPLY_COMPLETED',
+  WITHDRAW_SUPPLY_FAILED: 'LENDING_WITHDRAW_SUPPLY_FAILED',
 } as const;
 
 export const SWAP_EVENTS = {
@@ -167,4 +220,25 @@ export interface LiquidationResult {
   collateralSeized: number;
   debtRepaid: number;
   penalty: number;
+}
+
+export interface SupplyResult {
+  marketId: string;
+  supplyPositionId: string;
+  suppliedAmount: number;
+}
+
+export interface CollectYieldResult {
+  marketId: string;
+  supplyPositionId: string;
+  collectedAmount: number;
+  txHash: string | null;
+}
+
+export interface WithdrawSupplyResult {
+  marketId: string;
+  supplyPositionId: string;
+  withdrawnAmount: number;
+  remainingSupply: number;
+  txHash: string;
 }

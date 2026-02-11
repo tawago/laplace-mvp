@@ -50,30 +50,29 @@ async function main() {
     console.log(`Market ID: ${marketId}`);
     console.log();
 
-    // Verify the market was created
-    const market = await getMarketByName('TST-RWD');
+    // Verify seeded markets
+    for (const name of ['SAIL-RLUSD', 'NYRA-RLUSD']) {
+      const market = await getMarketByName(name);
+      if (!market) {
+        throw new Error(`Market ${name} was not created successfully`);
+      }
 
-    if (!market) {
-      throw new Error('Market was not created successfully');
-    }
+      console.log('Market Configuration:');
+      console.log(`  Name: ${market.name}`);
+      console.log(`  Collateral: ${market.collateral_currency}`);
+      console.log(`  Debt: ${market.debt_currency}`);
+      console.log(`  Max LTV: ${market.max_ltv_ratio * 100}%`);
+      console.log(`  Liquidation LTV: ${market.liquidation_ltv_ratio * 100}%`);
+      console.log(`  Interest Rate: ${market.base_interest_rate * 100}% annual`);
+      console.log(`  Liquidation Penalty: ${market.liquidation_penalty * 100}%`);
 
-    console.log('Market Configuration:');
-    console.log(`  Name: ${market.name}`);
-    console.log(`  Collateral: ${market.collateral_currency}`);
-    console.log(`  Debt: ${market.debt_currency}`);
-    console.log(`  Max LTV: ${market.max_ltv_ratio * 100}%`);
-    console.log(`  Liquidation LTV: ${market.liquidation_ltv_ratio * 100}%`);
-    console.log(`  Interest Rate: ${market.base_interest_rate * 100}% annual`);
-    console.log(`  Liquidation Penalty: ${market.liquidation_penalty * 100}%`);
-    console.log();
+      const prices = await getMarketPrices(market.id);
+      if (prices) {
+        console.log('Price Oracle:');
+        console.log(`  COLLATERAL: $${prices.collateralPriceUsd}`);
+        console.log(`  DEBT: $${prices.debtPriceUsd}`);
+      }
 
-    // Check prices
-    const prices = await getMarketPrices(marketId);
-
-    if (prices) {
-      console.log('Price Oracle:');
-      console.log(`  COLLATERAL: $${prices.collateralPriceUsd}`);
-      console.log(`  DEBT: $${prices.debtPriceUsd}`);
       console.log();
     }
 

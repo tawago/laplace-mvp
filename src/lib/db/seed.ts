@@ -2,75 +2,120 @@
  * Database Seed and Query Module
  *
  * Uses Drizzle ORM for all database operations.
- * Seeds the database with initial market data for the TST-RWD lending market.
+ * Seeds the database with initial market data for the collateral and loan markets.
  */
 
-import { eq, and } from 'drizzle-orm';
+import { eq, and, notInArray } from 'drizzle-orm';
 import { db, users, markets, priceOracle } from './index';
+import { TOKEN_CODE_BY_SYMBOL } from '@/lib/xrpl/currency-codes';
 
 /**
- * Seed the TST-RWD market if it doesn't exist
+ * Seed default protocol markets if they don't exist
  */
 export async function seedMarket(issuerAddress: string): Promise<string> {
-  // Check if market already exists
-  const existing = await db.query.markets.findFirst({
-    where: eq(markets.name, 'TST-RWD'),
-  });
+  const defaults = [
+    {
+      name: 'SAIL-RLUSD',
+      collateralCurrency: TOKEN_CODE_BY_SYMBOL.SAIL,
+      debtCurrency: TOKEN_CODE_BY_SYMBOL.RLUSD,
+    },
+    {
+      name: 'NYRA-RLUSD',
+      collateralCurrency: TOKEN_CODE_BY_SYMBOL.NYRA,
+      debtCurrency: TOKEN_CODE_BY_SYMBOL.RLUSD,
+    },
+  ];
 
-  if (existing) {
-    return existing.id;
-  }
+  const marketIds: string[] = [];
 
-  // Neon HTTP driver does not support transactions, so seed in idempotent steps.
-  const [insertedMarket] = await db
-    .insert(markets)
-    .values({
-      name: 'TST-RWD',
-      collateralCurrency: 'TST',
-      collateralIssuer: issuerAddress,
-      debtCurrency: 'RWD',
-      debtIssuer: issuerAddress,
-      maxLtvRatio: '0.75',
-      liquidationLtvRatio: '0.85',
-      baseInterestRate: '0.05',
-      liquidationPenalty: '0.1',
-      minCollateralAmount: '10',
-      minBorrowAmount: '5',
-      isActive: true,
-    })
-    .onConflictDoNothing({ target: markets.name })
-    .returning();
+  for (const config of defaults) {
+    const [insertedMarket] = await db
+      .insert(markets)
+      .values({
+        name: config.name,
+        collateralCurrency: config.collateralCurrency,
+        collateralIssuer: issuerAddress,
+        debtCurrency: config.debtCurrency,
+        debtIssuer: issuerAddress,
+        maxLtvRatio: '0.75',
+        liquidationLtvRatio: '0.85',
+        baseInterestRate: '0.05',
+        liquidationPenalty: '0.1',
+        minCollateralAmount: '10',
+        minBorrowAmount: '5',
+        minSupplyAmount: '5',
+        totalSupplied: '0',
+        totalBorrowed: '0',
+        globalYieldIndex: '1.0',
+        reserveFactor: '0.1',
+        isActive: true,
+      })
+      .onConflictDoUpdate({
+        target: markets.name,
+        set: {
+          collateralCurrency: config.collateralCurrency,
+          collateralIssuer: issuerAddress,
+          debtCurrency: config.debtCurrency,
+          debtIssuer: issuerAddress,
+          maxLtvRatio: '0.75',
+          liquidationLtvRatio: '0.85',
+          baseInterestRate: '0.05',
+          liquidationPenalty: '0.1',
+          minCollateralAmount: '10',
+          minBorrowAmount: '5',
+          minSupplyAmount: '5',
+          totalSupplied: '0',
+          totalBorrowed: '0',
+          globalYieldIndex: '1.0',
+          reserveFactor: '0.1',
+          isActive: true,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
-  const market =
-    insertedMarket ??
-    (await db.query.markets.findFirst({
-      where: eq(markets.name, 'TST-RWD'),
-    }));
+    const market =
+      insertedMarket ??
+      (await db.query.markets.findFirst({
+        where: eq(markets.name, config.name),
+      }));
 
-  if (!market) {
-    throw new Error('Failed to create or load TST-RWD market');
+    if (!market) {
+      throw new Error(`Failed to create or load ${config.name} market`);
+    }
+
+    marketIds.push(market.id);
+
+    await db
+      .insert(priceOracle)
+      .values([
+        {
+          marketId: market.id,
+          assetSide: 'COLLATERAL',
+          priceUsd: '1.0',
+          source: 'MOCK',
+        },
+        {
+          marketId: market.id,
+          assetSide: 'DEBT',
+          priceUsd: '1.0',
+          source: 'MOCK',
+        },
+      ])
+      .onConflictDoNothing({ target: [priceOracle.marketId, priceOracle.assetSide] });
+
+    console.log(`Seeded market ${market.id} (${config.name}) with initial prices`);
   }
 
   await db
-    .insert(priceOracle)
-    .values([
-      {
-        marketId: market.id,
-        assetSide: 'COLLATERAL',
-        priceUsd: '1.0',
-        source: 'MOCK',
-      },
-      {
-        marketId: market.id,
-        assetSide: 'DEBT',
-        priceUsd: '1.0',
-        source: 'MOCK',
-      },
-    ])
-    .onConflictDoNothing({ target: [priceOracle.marketId, priceOracle.assetSide] });
+    .update(markets)
+    .set({
+      isActive: false,
+      updatedAt: new Date(),
+    })
+    .where(notInArray(markets.name, defaults.map((item) => item.name)));
 
-  console.log(`Seeded market ${market.id} (TST-RWD) with initial prices`);
-  return market.id;
+  return marketIds[0];
 }
 
 /**
@@ -118,6 +163,12 @@ export async function getMarketByName(name: string) {
     liquidation_penalty: parseFloat(market.liquidationPenalty),
     min_collateral_amount: parseFloat(market.minCollateralAmount),
     min_borrow_amount: parseFloat(market.minBorrowAmount),
+    min_supply_amount: parseFloat(market.minSupplyAmount),
+    total_supplied: parseFloat(market.totalSupplied),
+    total_borrowed: parseFloat(market.totalBorrowed),
+    global_yield_index: parseFloat(market.globalYieldIndex),
+    last_index_update: market.lastIndexUpdate,
+    reserve_factor: parseFloat(market.reserveFactor),
   };
 }
 
@@ -144,6 +195,12 @@ export async function getMarketById(id: string) {
     liquidation_penalty: parseFloat(market.liquidationPenalty),
     min_collateral_amount: parseFloat(market.minCollateralAmount),
     min_borrow_amount: parseFloat(market.minBorrowAmount),
+    min_supply_amount: parseFloat(market.minSupplyAmount),
+    total_supplied: parseFloat(market.totalSupplied),
+    total_borrowed: parseFloat(market.totalBorrowed),
+    global_yield_index: parseFloat(market.globalYieldIndex),
+    last_index_update: market.lastIndexUpdate,
+    reserve_factor: parseFloat(market.reserveFactor),
   };
 }
 
@@ -165,6 +222,11 @@ export async function getAllActiveMarkets() {
     max_ltv_ratio: parseFloat(market.maxLtvRatio),
     liquidation_ltv_ratio: parseFloat(market.liquidationLtvRatio),
     base_interest_rate: parseFloat(market.baseInterestRate),
+    min_supply_amount: parseFloat(market.minSupplyAmount),
+    total_supplied: parseFloat(market.totalSupplied),
+    total_borrowed: parseFloat(market.totalBorrowed),
+    global_yield_index: parseFloat(market.globalYieldIndex),
+    reserve_factor: parseFloat(market.reserveFactor),
   }));
 }
 

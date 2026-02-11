@@ -18,6 +18,12 @@ export {
   isLiquidatable,
   validateBorrow,
   validateWithdrawal,
+  calculateUtilizationRate,
+  calculateSupplyApr,
+  calculateSupplyApy,
+  calculateGlobalYieldIndex,
+  calculateAccruedSupplyYield,
+  deriveYieldIndexFromAccrued,
 } from './calculations';
 
 // On-chain transaction helpers
@@ -54,6 +60,29 @@ export {
   getLiquidatablePositions,
 } from './positions';
 
+// Pool accounting
+export {
+  getPoolMetrics,
+  getAvailableLiquidity,
+  updateGlobalYieldIndex,
+  addToTotalSupplied,
+  removeFromTotalSupplied,
+  addToTotalBorrowed,
+  removeFromTotalBorrowed,
+} from './pool';
+
+// Supply position management
+export {
+  getSupplyPositionById,
+  getOrCreateSupplyPosition,
+  getSupplyPositionForUser,
+  accrueSupplyYield,
+  checkpointSupplyYield,
+  addSupply,
+  removeSupply,
+  closeSupplyPosition,
+} from './supply';
+
 // Main service
 export {
   processDeposit,
@@ -62,4 +91,8 @@ export {
   processWithdraw,
   processLiquidation,
   getPositionWithMetrics,
+  processSupply,
+  processCollectYield,
+  processWithdrawSupply,
+  getSupplyPositionWithMetrics,
 } from './service';

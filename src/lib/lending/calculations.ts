@@ -14,6 +14,8 @@ import Decimal from 'decimal.js';
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_DOWN });
 
 const SECONDS_PER_YEAR = 31_536_000;
+const TOKEN_SCALE = 8;
+const INDEX_SCALE = 18;
 
 /**
  * Calculate interest accrued since last update
@@ -234,6 +236,121 @@ export function allocateRepayment(
     principalPaid: principalPaid.toDecimalPlaces(8, Decimal.ROUND_DOWN).toNumber(),
     excess: remaining.toDecimalPlaces(8, Decimal.ROUND_DOWN).toNumber(),
   };
+}
+
+/**
+ * Calculate pool utilization rate (borrowed / supplied).
+ */
+export function calculateUtilizationRate(
+  totalBorrowed: number | string,
+  totalSupplied: number | string
+): number {
+  const borrowed = new Decimal(totalBorrowed);
+  const supplied = new Decimal(totalSupplied);
+
+  if (supplied.lte(0)) {
+    return 0;
+  }
+
+  return borrowed.div(supplied).toDecimalPlaces(8, Decimal.ROUND_DOWN).toNumber();
+}
+
+/**
+ * Calculate supplier APR from borrow APR, utilization, and reserve factor.
+ */
+export function calculateSupplyApr(
+  borrowApr: number | string,
+  utilizationRate: number | string,
+  reserveFactor: number | string
+): number {
+  const borrow = new Decimal(borrowApr);
+  const utilization = new Decimal(utilizationRate);
+  const reserve = new Decimal(reserveFactor);
+
+  const clampedReserve = Decimal.max(0, Decimal.min(1, reserve));
+  const apr = borrow.mul(utilization).mul(new Decimal(1).sub(clampedReserve));
+
+  return apr.toDecimalPlaces(8, Decimal.ROUND_DOWN).toNumber();
+}
+
+/**
+ * Convert supplier APR to APY using daily compounding.
+ */
+export function calculateSupplyApy(supplyApr: number | string): number {
+  const apr = new Decimal(supplyApr);
+
+  if (apr.lte(0)) {
+    return 0;
+  }
+
+  const apy = new Decimal(1).add(apr.div(365)).pow(365).sub(1);
+  return apy.toDecimalPlaces(8, Decimal.ROUND_DOWN).toNumber();
+}
+
+/**
+ * Progress the global yield index over elapsed time.
+ */
+export function calculateGlobalYieldIndex(
+  currentGlobalYieldIndex: number | string,
+  supplyApr: number | string,
+  lastIndexUpdate: Date,
+  now: Date = new Date()
+): number {
+  const currentIndex = new Decimal(currentGlobalYieldIndex);
+  const apr = new Decimal(supplyApr);
+  const elapsedSeconds = Math.max(0, (now.getTime() - lastIndexUpdate.getTime()) / 1000);
+
+  if (elapsedSeconds <= 0 || apr.lte(0)) {
+    return currentIndex.toDecimalPlaces(INDEX_SCALE, Decimal.ROUND_DOWN).toNumber();
+  }
+
+  const elapsedYears = new Decimal(elapsedSeconds).div(SECONDS_PER_YEAR);
+  const growthFactor = new Decimal(1).add(apr.mul(elapsedYears));
+  const nextIndex = currentIndex.mul(growthFactor);
+
+  return nextIndex.toDecimalPlaces(INDEX_SCALE, Decimal.ROUND_DOWN).toNumber();
+}
+
+/**
+ * Calculate accrued supplier yield from index delta.
+ */
+export function calculateAccruedSupplyYield(
+  supplyAmount: number | string,
+  globalYieldIndex: number | string,
+  positionYieldIndex: number | string
+): number {
+  const supplied = new Decimal(supplyAmount);
+  const globalIndex = new Decimal(globalYieldIndex);
+  const positionIndex = new Decimal(positionYieldIndex);
+
+  if (supplied.lte(0) || globalIndex.lte(positionIndex) || positionIndex.lte(0)) {
+    return 0;
+  }
+
+  const accrued = supplied.mul(globalIndex.div(positionIndex).sub(1));
+  return accrued.toDecimalPlaces(TOKEN_SCALE, Decimal.ROUND_DOWN).toNumber();
+}
+
+/**
+ * Derive the position yield index needed to preserve a target accrued yield amount.
+ */
+export function deriveYieldIndexFromAccrued(
+  globalYieldIndex: number | string,
+  supplyAmount: number | string,
+  accruedYield: number | string
+): number {
+  const globalIndex = new Decimal(globalYieldIndex);
+  const supplied = new Decimal(supplyAmount);
+  const accrued = new Decimal(accruedYield);
+
+  if (supplied.lte(0) || accrued.lte(0)) {
+    return globalIndex.toDecimalPlaces(INDEX_SCALE, Decimal.ROUND_DOWN).toNumber();
+  }
+
+  const denominator = new Decimal(1).add(accrued.div(supplied));
+  const nextPositionIndex = globalIndex.div(denominator);
+
+  return nextPositionIndex.toDecimalPlaces(INDEX_SCALE, Decimal.ROUND_DOWN).toNumber();
 }
 
 /**
