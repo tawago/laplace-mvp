@@ -3,22 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/dev-with-network.mjs",
-    "dev:devnet": "node scripts/dev-with-network.mjs --devnet",
+    "dev": "next dev --experimental-https --port 3001",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:push:devnet": "NEXT_PUBLIC_XRPL_NETWORK=devnet drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "setup:testnet": "npx tsx scripts/setup-testnet.ts",
-    "setup:devnet": "npx tsx scripts/setup-testnet.ts --devnet",
+    "setup:xrpl": "npx tsx scripts/setup-devnet.ts",
     "setup:escrow": "npx tsx scripts/enable-token-escrow.ts",
-    "setup:escrow:devnet": "npx tsx scripts/enable-token-escrow.ts --devnet",
+    "verify:xls66": "npx tsx scripts/verify-xls66.ts",
     "setup:db": "npx tsx scripts/init-db.ts",
-    "setup:db:devnet": "npx tsx scripts/init-db.ts --devnet",
-    "setup:all": "npm run setup:testnet && npm run setup:db"
+    "setup:all": "npm run setup:xrpl && npm run setup:db"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.0",
@@ -60,6 +56,7 @@
     "drizzle-kit": "^0.21.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "neonctl": "^2.20.2",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.0",
     "typescript": "^5"

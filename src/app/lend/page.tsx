@@ -62,6 +62,7 @@ interface SupplyPosition {
 }
 
 interface SupplyPositionMetrics {
+  accruedYield: number;
   withdrawableAmount: number;
   availableLiquidity: number;
   utilizationRate: number;
@@ -87,6 +88,14 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+function normalizeShares(rawShares: string, scale: number): number {
+  const parsed = Number(rawShares);
+  if (!Number.isFinite(parsed)) return 0;
+  const divisor = Math.pow(10, Math.max(0, scale));
+  if (!Number.isFinite(divisor) || divisor <= 0) return parsed;
+  return parsed / divisor;
+}
+
 export default function LenderPage() {
   const [config, setConfig] = useState<LendingConfig | null>(null);
   const [selectedMarketId, setSelectedMarketId] = useState<string>('');
@@ -96,6 +105,7 @@ export default function LenderPage() {
   const [pool, setPool] = useState<PoolMetrics | null>(null);
   const [position, setPosition] = useState<SupplyPosition | null>(null);
   const [positionMetrics, setPositionMetrics] = useState<SupplyPositionMetrics | null>(null);
+  const [shareBalance, setShareBalance] = useState('0');
   const [events, setEvents] = useState<SupplierEvent[]>([]);
   const [loadingAction, setLoadingAction] = useState<string>('');
   const [pageLoading, setPageLoading] = useState(true);
@@ -151,6 +161,7 @@ export default function LenderPage() {
     if (!selectedMarketId || !wallet?.address) {
       setPosition(null);
       setPositionMetrics(null);
+      setShareBalance('0');
       return;
     }
 
@@ -162,14 +173,32 @@ export default function LenderPage() {
     if (response.status === 404 || payload.error?.code === 'SUPPLY_POSITION_NOT_FOUND') {
       setPosition(null);
       setPositionMetrics(null);
+      setShareBalance('0');
       return;
     }
 
     if (payload.success) {
       setPosition(payload.data.position);
       setPositionMetrics(payload.data.metrics);
+
+      const marketFromResponse = payload.data.market as { supplyMptIssuanceId?: string | null } | undefined;
+      const issuanceId =
+        (typeof marketFromResponse?.supplyMptIssuanceId === 'string' && marketFromResponse.supplyMptIssuanceId) ||
+        selectedMarket?.supplyMptIssuanceId ||
+        null;
+
+      if (issuanceId) {
+        try {
+          const shares = await getVaultShareBalance(wallet.address, issuanceId);
+          setShareBalance(shares);
+        } catch {
+          setShareBalance('0');
+        }
+      } else {
+        setShareBalance('0');
+      }
     }
-  }, [selectedMarketId, wallet?.address]);
+  }, [selectedMarket?.supplyMptIssuanceId, selectedMarketId, wallet?.address]);
 
   const refreshEvents = useCallback(async () => {
     if (!wallet?.address || !selectedMarketId) {
@@ -573,32 +602,23 @@ export default function LenderPage() {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-3 gap-4 text-sm">
                     <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-xs text-slate-500">Tracked Position</p>
+                      <p className="text-xs text-slate-500">Principal</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
                         {formatAmount(position.supplyAmount, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
                       </p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-xs text-slate-500">Position Status</p>
+                      <p className="text-xs text-slate-500">Earnings</p>
                       <p className="mt-1 text-lg font-semibold text-emerald-600">
-                        {position.status}
+                        {formatAmount(positionMetrics.accruedYield, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
                       </p>
                     </div>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 text-sm">
-                    <div>
-                      <p className="text-xs text-slate-500">Withdrawable</p>
-                      <p className="mt-1 font-semibold text-slate-900">
-                        {formatAmount(positionMetrics.withdrawableAmount, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Pool Liquidity</p>
-                      <p className="mt-1 font-semibold text-slate-900">
-                        {formatAmount(positionMetrics.availableLiquidity, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Share</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {formatAmount(normalizeShares(shareBalance, selectedMarket?.vaultScale ?? 6), 4)} shares
                       </p>
                     </div>
                   </div>
@@ -650,6 +670,20 @@ export default function LenderPage() {
                 <p className="text-sm text-slate-600">
                   Withdraw from your vault-backed supply while respecting pool liquidity constraints.
                 </p>
+                <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-500">Withdrawable</p>
+                    <p className="mt-1 font-semibold text-slate-900">
+                      {formatAmount(positionMetrics?.withdrawableAmount ?? 0, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Pool Liquidity</p>
+                    <p className="mt-1 font-semibold text-slate-900">
+                      {formatAmount(positionMetrics?.availableLiquidity ?? pool?.availableLiquidity ?? 0, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
+                    </p>
+                  </div>
+                </div>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <input
                     type="number"

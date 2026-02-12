@@ -15,6 +15,8 @@ import { PoolMetrics } from './types';
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_DOWN });
 
 const TOKEN_SCALE = 8;
+const ONCHAIN_RETRY_ATTEMPTS = 3;
+const ONCHAIN_RETRY_DELAY_MS = 400;
 
 type DbClient = typeof db;
 
@@ -23,6 +25,8 @@ interface MarketPoolState {
   totalSupplied: number;
   totalBorrowed: number;
   vaultAvailableAssets: number | null;
+  loanBrokerAddress: string | null;
+  loanBrokerId: string | null;
   baseInterestRate: number;
   reserveFactor: number;
   globalYieldIndex: number;
@@ -40,6 +44,8 @@ function parsePoolState(row: typeof markets.$inferSelect): MarketPoolState {
     totalSupplied: parseFloat(row.totalSupplied),
     totalBorrowed: parseFloat(row.totalBorrowed),
     vaultAvailableAssets: null,
+    loanBrokerAddress: row.loanBrokerAddress,
+    loanBrokerId: row.loanBrokerId,
     baseInterestRate: parseFloat(row.baseInterestRate),
     reserveFactor: parseFloat(row.reserveFactor),
     globalYieldIndex: parseFloat(row.globalYieldIndex),
@@ -48,24 +54,122 @@ function parsePoolState(row: typeof markets.$inferSelect): MarketPoolState {
   };
 }
 
+function parsePositiveAmount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function extractLoanOutstanding(loanObject: Record<string, unknown>): number {
+  const outstanding =
+    parsePositiveAmount(loanObject.TotalValueOutstanding) ??
+    parsePositiveAmount(loanObject.OutstandingDebt) ??
+    parsePositiveAmount(loanObject.PrincipalOutstanding) ??
+    0;
+
+  return outstanding;
+}
+
+async function withOnChainRetry<T>(operation: () => Promise<T>, label: string): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= ONCHAIN_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < ONCHAIN_RETRY_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, ONCHAIN_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  throw new Error(
+    `${label} failed after ${ONCHAIN_RETRY_ATTEMPTS} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`
+  );
+}
+
+async function hydrateLoanPoolState(state: MarketPoolState): Promise<MarketPoolState> {
+  if (!state.loanBrokerId) {
+    return state;
+  }
+
+  return withOnChainRetry(async () => {
+    const client = await getClient();
+    let brokerAccountAddress = state.loanBrokerAddress;
+
+    // Resolve pseudo-account from LoanBroker ledger entry.
+    // Some historical rows stored the owner account instead of the broker pseudo-account.
+    try {
+      const brokerEntry = (await client.request({
+        command: 'ledger_entry',
+        loan_broker: state.loanBrokerId,
+      } as never)) as { result?: { node?: unknown } };
+
+      const node = (brokerEntry.result as { node?: unknown } | undefined)?.node;
+      if (node && typeof node === 'object' && node !== null) {
+        const accountField = (node as Record<string, unknown>).Account;
+        if (typeof accountField === 'string' && accountField.length > 0) {
+          brokerAccountAddress = accountField;
+        }
+      }
+    } catch {
+      // Fallback to configured address when loan broker lookup fails.
+    }
+
+    if (!brokerAccountAddress) {
+      return state;
+    }
+
+    const accountObjects = await client.request({
+      command: 'account_objects',
+      account: brokerAccountAddress,
+      ledger_index: 'validated',
+    });
+
+    const objects = Array.isArray(accountObjects.result.account_objects)
+      ? (accountObjects.result.account_objects as unknown as Array<Record<string, unknown>>)
+      : [];
+
+    let totalBorrowed = 0;
+    for (const object of objects) {
+      if (object.LedgerEntryType !== 'Loan') continue;
+      if (object.LoanBrokerID !== state.loanBrokerId) continue;
+      totalBorrowed += extractLoanOutstanding(object);
+    }
+
+    return {
+      ...state,
+      totalBorrowed: toAmount(totalBorrowed),
+    };
+  }, `Failed to load loan state for market ${state.id}`);
+}
+
 async function hydrateVaultPoolState(state: MarketPoolState): Promise<MarketPoolState> {
   if (!state.supplyVaultId) {
     return state;
   }
+  const supplyVaultId = state.supplyVaultId;
 
-  try {
+  return withOnChainRetry(async () => {
     const client = await getClient();
-    const vaultInfo = await getSupplyVaultInfo(client, state.supplyVaultId);
+    const vaultInfo = await getSupplyVaultInfo(client, supplyVaultId);
 
     return {
       ...state,
       totalSupplied: toAmount(vaultInfo.assetsTotal),
       vaultAvailableAssets: toAmount(vaultInfo.assetsAvailable),
     };
-  } catch (error) {
-    console.warn(`Failed to load vault state for market ${state.id}:`, error);
-    return state;
-  }
+  }, `Failed to load vault state for market ${state.id}`);
 }
 
 async function getMarketPoolState(marketId: string, database: DbClient = db): Promise<MarketPoolState | null> {
@@ -77,8 +181,9 @@ async function getMarketPoolState(marketId: string, database: DbClient = db): Pr
     return null;
   }
 
-  const state = parsePoolState(market);
-  return hydrateVaultPoolState(state);
+  const baseState = parsePoolState(market);
+  const withVaultState = await hydrateVaultPoolState(baseState);
+  return hydrateLoanPoolState(withVaultState);
 }
 
 function buildPoolMetrics(state: MarketPoolState): PoolMetrics {

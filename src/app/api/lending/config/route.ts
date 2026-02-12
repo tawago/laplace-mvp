@@ -67,6 +67,8 @@ export async function GET() {
           minSupplyAmount: market.min_supply_amount,
           supplyVaultId: market.supply_vault_id,
           supplyMptIssuanceId: market.supply_mpt_issuance_id,
+          loanBrokerId: market.loan_broker_id,
+          loanBrokerAddress: market.loan_broker_address,
           vaultScale: market.vault_scale,
           reserveFactor: market.reserve_factor,
           totalSupplied: market.total_supplied,
@@ -89,7 +91,7 @@ export async function GET() {
         issuerAddress,
         backendAddress,
         network: getXrplNetwork(),
-        testnetUrl: getXrplWsUrl(),
+        xrplWsUrl: getXrplWsUrl(),
         explorerUrl: getXrplExplorerUrl(),
       },
     });

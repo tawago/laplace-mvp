@@ -15,7 +15,7 @@ const TOKENS = {
   },
   RLUSD: {
     code: TOKEN_CODE_BY_SYMBOL.RLUSD,
-    amount: '10',
+    amount: '1000',
   },
 } as const;
 

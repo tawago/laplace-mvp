@@ -38,6 +38,11 @@ export interface PositionRow {
   escrow_fulfillment: string | null;
   escrow_preimage: string | null;
   escrow_cancel_after: string | null;
+  loan_id: string | null;
+  loan_hash: string | null;
+  loan_term_months: number;
+  loan_maturity_date: string | null;
+  loan_opened_at_ledger_index: number | null;
 }
 
 /**
@@ -63,6 +68,11 @@ function dbToPosition(row: DbPosition): Position {
     escrowFulfillment: row.escrowFulfillment,
     escrowPreimage: row.escrowPreimage,
     escrowCancelAfter: row.escrowCancelAfter,
+    loanId: row.loanId,
+    loanHash: row.loanHash,
+    loanTermMonths: row.loanTermMonths,
+    loanMaturityDate: row.loanMaturityDate,
+    loanOpenedAtLedgerIndex: row.loanOpenedAtLedgerIndex,
   };
 }
 
@@ -73,6 +83,14 @@ export interface PositionEscrowMetadata {
   fulfillment: string;
   preimage: string;
   cancelAfter: Date | null;
+}
+
+export interface PositionLoanMetadata {
+  loanId: string;
+  loanHash: string;
+  loanTermMonths: number;
+  loanMaturityDate: Date | null;
+  loanOpenedAtLedgerIndex: number | null;
 }
 
 /**
@@ -393,6 +411,38 @@ export async function clearPositionEscrowMetadata(positionId: string): Promise<v
       escrowFulfillment: null,
       escrowPreimage: null,
       escrowCancelAfter: null,
+    })
+    .where(eq(positions.id, positionId));
+}
+
+export async function setPositionLoanMetadata(
+  positionId: string,
+  metadata: PositionLoanMetadata
+): Promise<void> {
+  await db
+    .update(positions)
+    .set({
+      loanId: metadata.loanId,
+      loanHash: metadata.loanHash,
+      loanTermMonths: metadata.loanTermMonths,
+      loanMaturityDate: metadata.loanMaturityDate,
+      loanOpenedAtLedgerIndex: metadata.loanOpenedAtLedgerIndex,
+    })
+    .where(eq(positions.id, positionId));
+}
+
+export async function clearPositionLoanMetadata(positionId: string): Promise<void> {
+  await db
+    .update(positions)
+    .set({
+      loanId: null,
+      loanHash: null,
+      loanTermMonths: 3,
+      loanMaturityDate: null,
+      loanOpenedAtLedgerIndex: null,
+      loanPrincipal: '0',
+      interestAccrued: '0',
+      lastInterestUpdate: new Date(),
     })
     .where(eq(positions.id, positionId));
 }

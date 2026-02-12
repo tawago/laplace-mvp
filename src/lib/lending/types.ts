@@ -25,6 +25,8 @@ export interface Market {
   minSupplyAmount?: number;
   supplyVaultId?: string | null;
   supplyMptIssuanceId?: string | null;
+  loanBrokerId?: string | null;
+  loanBrokerAddress?: string | null;
   vaultScale?: number;
   totalSupplied?: number;
   totalBorrowed?: number;
@@ -52,6 +54,11 @@ export interface Position {
   escrowFulfillment: string | null;
   escrowPreimage: string | null;
   escrowCancelAfter: Date | null;
+  loanId: string | null;
+  loanHash: string | null;
+  loanTermMonths: number;
+  loanMaturityDate: Date | null;
+  loanOpenedAtLedgerIndex: number | null;
 }
 
 export interface SupplyPosition {
@@ -125,7 +132,6 @@ export interface AppEvent {
   eventType: string;
   module: EventModule;
   status: EventStatus;
-  userId: string | null;
   userAddress: string | null;
   marketId: string | null;
   positionId: string | null;

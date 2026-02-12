@@ -6,13 +6,12 @@
  * 2. Enables rippling on the issuer account
  * 3. Creates trust lines from backend to issuer for all protocol tokens
  * 4. Issues initial protocol tokens to the backend wallet
- * 5. Automatically updates .env.local or .env.devnet with the new credentials
+ * 5. Automatically updates .env.local with the new credentials
  *
  * NOTE: This script does NOT initialize the database.
  * Run `npm run setup:db` separately to seed the database.
  *
- * Run with: npx tsx scripts/setup-testnet.ts
- * Run devnet: npx tsx scripts/setup-testnet.ts --devnet
+ * Run with: npx tsx scripts/setup-devnet.ts
  * Use --force to overwrite existing configuration
  */
 
@@ -22,19 +21,10 @@ import * as path from 'path';
 import { TOKEN_CODE_BY_SYMBOL } from '../src/lib/xrpl/currency-codes';
 
 const NETWORK_CONFIG = {
-  testnet: {
-    label: 'testnet',
-    wsUrl: 'wss://s.altnet.rippletest.net:51233',
-    explorerUrl: 'https://testnet.xrpl.org',
-  },
-  devnet: {
-    label: 'devnet',
-    wsUrl: 'wss://s.devnet.rippletest.net:51233',
-    explorerUrl: 'https://devnet.xrpl.org',
-  },
+  label: 'devnet',
+  wsUrl: 'wss://s.devnet.rippletest.net:51233',
+  explorerUrl: 'https://devnet.xrpl.org',
 } as const;
-
-type XrplNetwork = keyof typeof NETWORK_CONFIG;
 const TOKEN_SAIL_CODE = TOKEN_CODE_BY_SYMBOL.SAIL;
 const TOKEN_NYRA_CODE = TOKEN_CODE_BY_SYMBOL.NYRA;
 const TOKEN_RLUSD_CODE = TOKEN_CODE_BY_SYMBOL.RLUSD;
@@ -184,10 +174,8 @@ async function sendToken(
 
 async function main() {
   const forceFlag = process.argv.includes('--force');
-  const isDevnet = process.argv.includes('--devnet');
-  const network: XrplNetwork = isDevnet ? 'devnet' : 'testnet';
-  const networkConfig = NETWORK_CONFIG[network];
-  const envFileName = network === 'devnet' ? '.env.devnet' : '.env.local';
+  const networkConfig = NETWORK_CONFIG;
+  const envFileName = '.env.local';
   const envFilePath = path.join(process.cwd(), envFileName);
 
   console.log('='.repeat(60));
@@ -203,7 +191,7 @@ async function main() {
     console.log('overwrite your existing configuration.');
     console.log('');
     console.log('If you want to proceed, run with --force flag:');
-    console.log(`  npx tsx scripts/setup-testnet.ts ${isDevnet ? '--devnet ' : ''}--force`);
+    console.log('  npx tsx scripts/setup-devnet.ts --force');
     console.log('');
     process.exit(0);
   }
@@ -277,12 +265,9 @@ async function main() {
       BACKEND_WALLET_SEED: backendWallet.seed!,
       ISSUER_ADDRESS: issuerWallet.address,
       BACKEND_ADDRESS: backendWallet.address,
-      TOKEN_SAIL_CODE,
-      TOKEN_NYRA_CODE,
-      TOKEN_RLUSD_CODE,
-      NEXT_PUBLIC_XRPL_NETWORK: network,
-      NEXT_PUBLIC_TESTNET_URL: networkConfig.wsUrl,
-      NEXT_PUBLIC_TESTNET_EXPLORER: networkConfig.explorerUrl,
+      NEXT_PUBLIC_XRPL_NETWORK: 'devnet',
+      NEXT_PUBLIC_XRPL_WS_URL: networkConfig.wsUrl,
+      NEXT_PUBLIC_XRPL_EXPLORER_URL: networkConfig.explorerUrl,
     });
     console.log(`${envFileName} updated`);
     console.log();
@@ -300,8 +285,8 @@ async function main() {
     console.log();
     console.log('Next steps:');
     console.log(`  1. Configure DATABASE_URL in ${envFileName} (Neon connection string)`);
-    console.log(`  2. Run: npm run ${isDevnet ? 'setup:db:devnet' : 'setup:db'}`);
-    console.log(`  3. Run: npm run ${isDevnet ? 'dev:devnet' : 'dev'}`);
+    console.log('  2. Run: npm run setup:db');
+    console.log('  3. Run: npm run dev');
 
   } catch (error) {
     console.error('Setup failed:', error);

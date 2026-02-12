@@ -1,29 +1,22 @@
-import { Client, Wallet } from 'xrpl';
+import { Client, Wallet, decode } from 'xrpl';
 import Decimal from 'decimal.js';
 import { getTokenCode } from '@/lib/xrpl/currency-codes';
 
-type XrplNetwork = 'testnet' | 'devnet';
+const DEVNET_WS_URL = 'wss://s.devnet.rippletest.net:51233';
+const DEVNET_FAUCET_URL = 'https://faucet.devnet.rippletest.net/accounts';
 
-const NETWORK = (process.env.NEXT_PUBLIC_XRPL_NETWORK === 'devnet' ? 'devnet' : 'testnet') as XrplNetwork;
-
-const XRPL_NETWORK_CONFIG: Record<XrplNetwork, { wsUrl: string; faucetUrl: string }> = {
-  testnet: {
-    wsUrl: 'wss://s.altnet.rippletest.net:51233',
-    faucetUrl: 'https://faucet.altnet.rippletest.net/accounts',
-  },
-  devnet: {
-    wsUrl: 'wss://s.devnet.rippletest.net:51233',
-    faucetUrl: 'https://faucet.devnet.rippletest.net/accounts',
-  },
-};
-
-const XRPL_URL = process.env.NEXT_PUBLIC_TESTNET_URL || XRPL_NETWORK_CONFIG[NETWORK].wsUrl;
-const XRPL_FAUCET_URL =
-  process.env.NEXT_PUBLIC_XRPL_FAUCET_URL || XRPL_NETWORK_CONFIG[NETWORK].faucetUrl;
+const XRPL_URL = process.env.NEXT_PUBLIC_XRPL_WS_URL || DEVNET_WS_URL;
+const XRPL_FAUCET_URL = process.env.NEXT_PUBLIC_XRPL_FAUCET_URL || DEVNET_FAUCET_URL;
 
 export interface WalletInfo {
   address: string;
   seed: string;
+}
+
+export function signTransactionJson(seed: string, txJson: Record<string, unknown>): Record<string, unknown> {
+  const wallet = Wallet.fromSeed(seed);
+  const signed = wallet.sign(txJson as never);
+  return decode(signed.tx_blob) as Record<string, unknown>;
 }
 
 export interface TokenBalance {
@@ -137,7 +130,7 @@ export function getWalletFromSeed(seed: string): WalletInfo {
 }
 
 /**
- * Fund a wallet from the testnet faucet
+ * Fund a wallet from the devnet faucet
  */
 export async function fundWalletFromFaucet(address: string): Promise<{ funded: boolean; balance: string }> {
   try {

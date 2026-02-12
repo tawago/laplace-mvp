@@ -24,7 +24,6 @@ import { toast } from 'sonner';
 import {
   generateConditionFulfillment,
   getWalletFromSeed,
-  sendTokenToBackend,
   submitCollateralEscrow,
   type TokenBalance,
   type WalletInfo,
@@ -79,6 +78,18 @@ interface PositionMetrics {
   availableLiquidity: number;
 }
 
+interface LoanRepaymentOverview {
+  loanId: string;
+  minimumRepayment: number | null;
+  fullRepayment: number | null;
+  suggestedOverpayment: number | null;
+  periodicPayment: number | null;
+  paymentRemaining: number | null;
+  nextPaymentDueDate: string | null;
+  nextPaymentDueRippleEpoch: number | null;
+  isPastDue: boolean;
+}
+
 interface BorrowerEvent {
   id: string;
   eventType: string;
@@ -90,6 +101,18 @@ interface BorrowerEvent {
 }
 
 const DISPLAY_TOKENS = ['SAIL', 'NYRA', 'RLUSD'];
+const REPAY_BUFFER_RATE = 0.002;
+const REPAY_DECIMALS = 6;
+
+function roundUpAmount(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.ceil(value * factor) / factor;
+}
+
+function withRepayBuffer(baseAmount: number): number {
+  const buffered = baseAmount * (1 + REPAY_BUFFER_RATE);
+  return roundUpAmount(buffered, REPAY_DECIMALS);
+}
 
 export default function LendingPage() {
   const [config, setConfig] = useState<LendingConfig | null>(null);
@@ -100,6 +123,7 @@ export default function LendingPage() {
   const [position, setPosition] = useState<Position | null>(null);
   const [metrics, setMetrics] = useState<PositionMetrics | null>(null);
   const [events, setEvents] = useState<BorrowerEvent[]>([]);
+  const [loanRepayment, setLoanRepayment] = useState<LoanRepaymentOverview | null>(null);
   const [positionLoading, setPositionLoading] = useState(false);
   const [loading, setLoading] = useState('');
   const [collateralTrustlineReady, setCollateralTrustlineReady] = useState(false);
@@ -108,6 +132,7 @@ export default function LendingPage() {
   const [depositAmount, setDepositAmount] = useState('100');
   const [borrowAmount, setBorrowAmount] = useState('50');
   const [repayAmount, setRepayAmount] = useState('10');
+  const [repayKind, setRepayKind] = useState<'regular' | 'full' | 'overpayment' | 'late'>('regular');
   const [withdrawAmount, setWithdrawAmount] = useState('10');
 
   const selectedMarket = useMemo(
@@ -152,6 +177,7 @@ export default function LendingPage() {
       setPosition(null);
       setMetrics(null);
       setEvents([]);
+      setLoanRepayment(null);
       setPositionLoading(false);
       return;
     }
@@ -165,6 +191,7 @@ export default function LendingPage() {
       if (!payload.success) return;
       setPosition(payload.data.position);
       setMetrics(payload.data.metrics);
+      setLoanRepayment(payload.data.loan ?? null);
       setEvents(payload.data.events ?? []);
     } catch (error) {
       console.error('Failed to refresh position', error);
@@ -262,7 +289,7 @@ export default function LendingPage() {
       if (sendResult.result !== 'tesSUCCESS') {
         if (sendResult.result === 'tecNO_PERMISSION') {
           toast.error(
-            'Escrow is not enabled for this issued token. Run setup:escrow(:devnet) to enable issuer trust line locking.'
+            'Escrow is not enabled for this issued token. Run setup:escrow to enable issuer trust line locking.'
           );
         } else {
           toast.error(`Failed to create collateral escrow: ${sendResult.result}`);
@@ -320,6 +347,7 @@ export default function LendingPage() {
           userAddress: wallet.address,
           marketId: selectedMarket.id,
           amount,
+          borrowerSeed: wallet.seed,
         }),
       });
       const payload = await response.json();
@@ -334,31 +362,24 @@ export default function LendingPage() {
   }, [borrowAmount, metrics, refreshBalances, refreshPosition, selectedMarket, wallet, withAction]);
 
   const handleRepay = useCallback(async () => {
-    if (!wallet || !config || !selectedMarket) return;
+    if (!wallet || !selectedMarket) return;
+    if (!loanRepayment) {
+      toast.error('No active on-chain loan to repay');
+      return;
+    }
     const amount = Number(repayAmount);
     if (!Number.isFinite(amount) || amount <= 0) return;
 
     await withAction('repay', async () => {
-      const sendResult = await sendTokenToBackend(
-        wallet.seed,
-        config.backendAddress,
-        selectedMarket.debtCurrency,
-        amount.toString(),
-        selectedMarket.debtIssuer
-      );
-
-      if (sendResult.result !== 'tesSUCCESS') {
-        toast.error(`Failed to send debt token: ${sendResult.result}`);
-        return;
-      }
-
       const response = await fetch('/api/lending/repay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          txHash: sendResult.hash,
-          senderAddress: wallet.address,
+          userAddress: wallet.address,
           marketId: selectedMarket.id,
+          amount,
+          borrowerSeed: wallet.seed,
+          repayKind,
         }),
       });
       const payload = await response.json();
@@ -371,14 +392,32 @@ export default function LendingPage() {
       await Promise.all([refreshBalances(), refreshPosition()]);
     });
   }, [
-    config,
     refreshBalances,
+    loanRepayment,
     refreshPosition,
     repayAmount,
+    repayKind,
     selectedMarket,
     wallet,
     withAction,
   ]);
+
+  const applyRepayPreset = useCallback(
+    (kind: 'regular' | 'full' | 'overpayment' | 'late') => {
+      setRepayKind(kind);
+      const baseAmount =
+        kind === 'full'
+          ? loanRepayment?.fullRepayment ?? loanRepayment?.minimumRepayment
+          : kind === 'overpayment'
+          ? loanRepayment?.suggestedOverpayment
+          : loanRepayment?.minimumRepayment;
+      if (typeof baseAmount === 'number' && Number.isFinite(baseAmount) && baseAmount > 0) {
+        const bufferedAmount = kind === 'full' ? roundUpAmount(baseAmount, REPAY_DECIMALS) : withRepayBuffer(baseAmount);
+        setRepayAmount(bufferedAmount.toFixed(REPAY_DECIMALS));
+      }
+    },
+    [loanRepayment]
+  );
 
   const handleWithdraw = useCallback(async () => {
     if (!wallet || !selectedMarket) return;
@@ -669,6 +708,73 @@ export default function LendingPage() {
                   </TabsContent>
 
                   <TabsContent value="repay" className="space-y-3">
+                    <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/40">
+                      {loanRepayment ? (
+                        <>
+                          <p className="text-zinc-700 dark:text-zinc-300">
+                            Minimum payment:{' '}
+                            <span className="font-semibold">
+                              {(loanRepayment.minimumRepayment ?? 0).toFixed(6)} {getTokenSymbol(selectedMarket.debtCurrency)}
+                            </span>
+                          </p>
+                          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+                            Next due:{' '}
+                            {loanRepayment.nextPaymentDueDate
+                              ? new Date(loanRepayment.nextPaymentDueDate).toLocaleString()
+                              : 'N/A'}
+                            {loanRepayment.isPastDue ? ' (late)' : ''}
+                          </p>
+                          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+                            Payments remaining: {loanRepayment.paymentRemaining ?? 'N/A'}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-zinc-700 dark:text-zinc-300">
+                          No active on-chain loan found for this market.
+                        </p>
+                      )}
+                      <p className="mt-1 text-zinc-500 dark:text-zinc-500">
+                        Regular, Late, and Overpay presets include a {Math.round(REPAY_BUFFER_RATE * 1000) / 10}% buffer. Full Early uses exact payoff.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={repayKind === 'regular' ? 'default' : 'outline'}
+                        onClick={() => applyRepayPreset('regular')}
+                        disabled={!loanRepayment}
+                      >
+                        Regular
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={repayKind === 'full' ? 'default' : 'outline'}
+                        onClick={() => applyRepayPreset('full')}
+                        disabled={!loanRepayment}
+                      >
+                        Full Early
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={repayKind === 'overpayment' ? 'default' : 'outline'}
+                        onClick={() => applyRepayPreset('overpayment')}
+                        disabled={!loanRepayment}
+                      >
+                        Overpay
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={repayKind === 'late' ? 'default' : 'outline'}
+                        onClick={() => applyRepayPreset('late')}
+                        disabled={!loanRepayment}
+                      >
+                        Late
+                      </Button>
+                    </div>
                     <div className="flex items-center gap-3">
                       <input
                         type="number"
@@ -677,7 +783,10 @@ export default function LendingPage() {
                         className="w-40 rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
                       />
                       <span className="text-sm text-zinc-600 dark:text-zinc-400">{getTokenSymbol(selectedMarket.debtCurrency)}</span>
-                      <Button onClick={handleRepay} disabled={loading === 'repay' || !debtTrustlineReady}>
+                      <Button
+                        onClick={handleRepay}
+                        disabled={loading === 'repay' || !debtTrustlineReady || !loanRepayment}
+                      >
                         {loading === 'repay' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowDownLeft className="mr-2 h-4 w-4" />}
                         Repay
                       </Button>

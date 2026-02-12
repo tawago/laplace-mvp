@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const { position, metrics, market } = result;
+    const { position, metrics, market, loan } = result;
 
     // Get recent events for this position
     const rawEvents = await getEventsForPosition(position.id, 20);
@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
           liquidationLtvRatio: market.liquidationLtvRatio,
           baseInterestRate: market.baseInterestRate,
         },
+        loan,
         events,
       },
     });

@@ -46,6 +46,8 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
         minSupplyAmount: '5',
         supplyVaultId: null,
         supplyMptIssuanceId: null,
+        loanBrokerId: null,
+        loanBrokerAddress: null,
         vaultScale: 6,
         totalSupplied: '0',
         totalBorrowed: '0',
@@ -69,6 +71,8 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
           minSupplyAmount: '5',
           supplyVaultId: null,
           supplyMptIssuanceId: null,
+          loanBrokerId: null,
+          loanBrokerAddress: null,
           vaultScale: 6,
           totalSupplied: '0',
           totalBorrowed: '0',
@@ -172,6 +176,8 @@ export async function getMarketByName(name: string) {
     min_supply_amount: parseFloat(market.minSupplyAmount),
     supply_vault_id: market.supplyVaultId,
     supply_mpt_issuance_id: market.supplyMptIssuanceId,
+    loan_broker_id: market.loanBrokerId,
+    loan_broker_address: market.loanBrokerAddress,
     vault_scale: market.vaultScale,
     total_supplied: parseFloat(market.totalSupplied),
     total_borrowed: parseFloat(market.totalBorrowed),
@@ -207,6 +213,8 @@ export async function getMarketById(id: string) {
     min_supply_amount: parseFloat(market.minSupplyAmount),
     supply_vault_id: market.supplyVaultId,
     supply_mpt_issuance_id: market.supplyMptIssuanceId,
+    loan_broker_id: market.loanBrokerId,
+    loan_broker_address: market.loanBrokerAddress,
     vault_scale: market.vaultScale,
     total_supplied: parseFloat(market.totalSupplied),
     total_borrowed: parseFloat(market.totalBorrowed),
@@ -237,6 +245,8 @@ export async function getAllActiveMarkets() {
     min_supply_amount: parseFloat(market.minSupplyAmount),
     supply_vault_id: market.supplyVaultId,
     supply_mpt_issuance_id: market.supplyMptIssuanceId,
+    loan_broker_id: market.loanBrokerId,
+    loan_broker_address: market.loanBrokerAddress,
     vault_scale: market.vaultScale,
     total_supplied: parseFloat(market.totalSupplied),
     total_borrowed: parseFloat(market.totalBorrowed),
@@ -298,6 +308,20 @@ export async function setMarketSupplyVaultConfig(
       supplyVaultId: config.vaultId,
       supplyMptIssuanceId: config.mptIssuanceId,
       vaultScale: config.vaultScale,
+      updatedAt: new Date(),
+    })
+    .where(eq(markets.id, marketId));
+}
+
+export async function setMarketLoanBrokerConfig(
+  marketId: string,
+  config: { loanBrokerId: string; loanBrokerAddress: string }
+): Promise<void> {
+  await db
+    .update(markets)
+    .set({
+      loanBrokerId: config.loanBrokerId,
+      loanBrokerAddress: config.loanBrokerAddress,
       updatedAt: new Date(),
     })
     .where(eq(markets.id, marketId));
