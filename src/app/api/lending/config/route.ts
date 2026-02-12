@@ -3,6 +3,7 @@ import { getAllActiveMarkets, getMarketPrices } from '@/lib/db/seed';
 import { getIssuerAddress, getBackendAddress } from '@/lib/xrpl/wallet';
 import { getXrplExplorerUrl, getXrplNetwork, getXrplWsUrl } from '@/lib/config/runtime';
 import { getClient } from '@/lib/xrpl/client';
+import { cached, xrplCacheKeys } from '@/lib/xrpl/cache';
 import { parseAccountRootFlags } from 'xrpl';
 
 function isTrustLineLockingEnabled(flags: number): boolean {
@@ -21,38 +22,40 @@ export async function GET() {
     const backendAddress = getBackendAddress();
     const client = await getClient();
 
-    const issuerEscrowSupportCache = new Map<string, boolean>();
-
     const getIssuerEscrowSupport = async (issuer: string): Promise<boolean> => {
-      const cached = issuerEscrowSupportCache.get(issuer);
-      if (typeof cached === 'boolean') {
-        return cached;
-      }
+      return cached({
+        key: xrplCacheKeys.issuerEscrowSupport(issuer),
+        ttlMs: 300_000,
+        tags: ['issuer-escrow-support', `issuer-escrow-support:${issuer}`],
+        loader: async () => {
+          try {
+            const response = await client.request({
+              command: 'account_info',
+              account: issuer,
+              ledger_index: 'validated',
+            });
 
-      try {
-        const response = await client.request({
-          command: 'account_info',
-          account: issuer,
-          ledger_index: 'validated',
-        });
-
-        const flags =
-          typeof response.result?.account_data?.Flags === 'number'
-            ? response.result.account_data.Flags
-            : 0;
-        const enabled = isTrustLineLockingEnabled(flags);
-        issuerEscrowSupportCache.set(issuer, enabled);
-        return enabled;
-      } catch {
-        issuerEscrowSupportCache.set(issuer, false);
-        return false;
-      }
+            const flags =
+              typeof response.result?.account_data?.Flags === 'number'
+                ? response.result.account_data.Flags
+                : 0;
+            return isTrustLineLockingEnabled(flags);
+          } catch {
+            return false;
+          }
+        },
+      });
     };
+
+    const uniqueIssuers = [...new Set(markets.map((market) => market.collateral_issuer))];
+    await Promise.all(uniqueIssuers.map((issuer) => getIssuerEscrowSupport(issuer)));
 
     const marketsWithPrices = await Promise.all(
       markets.map(async (market) => {
-        const prices = await getMarketPrices(market.id);
-        const collateralEscrowEnabled = await getIssuerEscrowSupport(market.collateral_issuer);
+        const [prices, collateralEscrowEnabled] = await Promise.all([
+          getMarketPrices(market.id),
+          getIssuerEscrowSupport(market.collateral_issuer),
+        ]);
         return {
           id: market.id,
           name: market.name,

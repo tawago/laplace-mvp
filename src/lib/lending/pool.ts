@@ -182,8 +182,17 @@ async function getMarketPoolState(marketId: string, database: DbClient = db): Pr
   }
 
   const baseState = parsePoolState(market);
-  const withVaultState = await hydrateVaultPoolState(baseState);
-  return hydrateLoanPoolState(withVaultState);
+  const [vaultState, loanState] = await Promise.all([
+    hydrateVaultPoolState(baseState),
+    hydrateLoanPoolState(baseState),
+  ]);
+
+  return {
+    ...baseState,
+    totalSupplied: vaultState.totalSupplied,
+    vaultAvailableAssets: vaultState.vaultAvailableAssets,
+    totalBorrowed: loanState.totalBorrowed,
+  };
 }
 
 function buildPoolMetrics(state: MarketPoolState): PoolMetrics {

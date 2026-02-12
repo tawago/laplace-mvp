@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { confirmBorrowWithSignedTx, prepareBorrow, processBorrowWithBorrowerSeed } from '@/lib/lending';
+import { invalidateLendingReadCaches } from '@/lib/xrpl/cache';
 
 /**
  * POST /api/lending/borrow
@@ -98,6 +99,10 @@ export async function POST(request: NextRequest) {
       if (error.code === 'INTERNAL_ERROR') status = 500;
       if (error.code === 'OPERATION_IN_PROGRESS') status = 409;
       return NextResponse.json({ success: false, error }, { status });
+    }
+
+    if (borrowerSeed || signedTxJson) {
+      invalidateLendingReadCaches({ marketId, userAddress });
     }
 
     return NextResponse.json({ success: true, data: result });
