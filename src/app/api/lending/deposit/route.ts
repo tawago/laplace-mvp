@@ -10,12 +10,23 @@ import { processDeposit } from '@/lib/lending';
  * - txHash: XRPL transaction hash
  * - senderAddress: User's XRPL address
  * - marketId: Target market ID
+ * - escrowCondition: Escrow condition hex
+ * - escrowFulfillment: Escrow fulfillment hex
+ * - escrowPreimage: Escrow preimage hex
  * - idempotencyKey?: Optional idempotency key
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { txHash, senderAddress, marketId, idempotencyKey } = body;
+    const {
+      txHash,
+      senderAddress,
+      marketId,
+      idempotencyKey,
+      escrowCondition,
+      escrowFulfillment,
+      escrowPreimage,
+    } = body;
 
     // Validate required fields
     if (!txHash) {
@@ -48,6 +59,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!escrowCondition || !escrowFulfillment || !escrowPreimage) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'MISSING_ESCROW_PARAMS',
+            message: 'escrowCondition, escrowFulfillment, and escrowPreimage are required',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
     // Validate address format
     if (!senderAddress.startsWith('r') || senderAddress.length < 25) {
       return NextResponse.json(
@@ -63,7 +87,10 @@ export async function POST(request: NextRequest) {
       txHash,
       senderAddress,
       marketId,
-      idempotencyKey
+      idempotencyKey,
+      escrowCondition,
+      escrowFulfillment,
+      escrowPreimage
     );
 
     if (error) {

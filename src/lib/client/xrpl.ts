@@ -38,6 +38,19 @@ export interface VaultSubmitResult {
   submittedAmount: string;
 }
 
+export interface EscrowConditionPackage {
+  condition: string;
+  fulfillment: string;
+  preimage: string;
+}
+
+export interface EscrowCreateSubmitResult {
+  hash: string;
+  result: string;
+  escrowSequence: number;
+  cancelAfter: number;
+}
+
 function normalizeVaultAmount(amount: string, scale = 6): string {
   const decimal = new Decimal(amount);
   if (!decimal.isFinite() || decimal.lte(0)) {
@@ -58,6 +71,30 @@ function extractResultCode(meta: unknown): string {
   }
 
   return 'unknown';
+}
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+}
+
+function unixToRippleTime(unixSeconds: number): number {
+  return unixSeconds - 946684800;
+}
+
+export async function generateConditionFulfillment(): Promise<EscrowConditionPackage> {
+  const preimageBytes = crypto.getRandomValues(new Uint8Array(32));
+  const digestBuffer = await crypto.subtle.digest('SHA-256', preimageBytes);
+  const digest = toHex(new Uint8Array(digestBuffer));
+  const preimage = toHex(preimageBytes);
+
+  return {
+    condition: `A0258020${digest}810120`,
+    fulfillment: `A0228020${preimage}`,
+    preimage,
+  };
 }
 
 let clientInstance: Client | null = null;
@@ -191,6 +228,50 @@ export async function sendTokenToBackend(
   return {
     hash: tx.result.hash,
     result,
+  };
+}
+
+export async function submitCollateralEscrow(
+  seed: string,
+  destination: string,
+  currency: string,
+  amount: string,
+  issuer: string,
+  condition: string,
+  cancelAfterUnixSeconds: number
+): Promise<EscrowCreateSubmitResult> {
+  const client = await getClientBrowser();
+  const wallet = Wallet.fromSeed(seed);
+  const normalizedCurrency = getTokenCode(currency) || currency;
+  const cancelAfter = unixToRippleTime(cancelAfterUnixSeconds);
+
+  const tx = await client.submitAndWait(
+    {
+      TransactionType: 'EscrowCreate',
+      Account: wallet.address,
+      Destination: destination,
+      Amount: {
+        currency: normalizedCurrency,
+        issuer,
+        value: amount,
+      },
+      Condition: condition.toUpperCase(),
+      CancelAfter: cancelAfter,
+    } as never,
+    { wallet }
+  );
+
+  const resultCode = extractResultCode(tx.result.meta);
+  const escrowSequence = (tx.result.tx_json as { Sequence?: number }).Sequence;
+  if (typeof escrowSequence !== 'number') {
+    throw new Error('EscrowCreate response missing transaction sequence');
+  }
+
+  return {
+    hash: tx.result.hash,
+    result: resultCode,
+    escrowSequence,
+    cancelAfter,
   };
 }
 

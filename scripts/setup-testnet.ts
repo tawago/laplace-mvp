@@ -93,6 +93,30 @@ async function enableRippling(client: Client, wallet: Wallet): Promise<void> {
   }
 }
 
+async function enableTokenEscrow(client: Client, wallet: Wallet): Promise<void> {
+  console.log('Enabling trust line token escrow on issuer account...');
+
+  const tx = await client.submitAndWait(
+    {
+      TransactionType: 'AccountSet',
+      Account: wallet.address,
+      SetFlag: AccountSetAsfFlags.asfAllowTrustLineLocking,
+    },
+    { wallet }
+  );
+
+  const result = tx.result.meta;
+  if (typeof result === 'object' && result !== null && 'TransactionResult' in result) {
+    if (result.TransactionResult === 'tesSUCCESS') {
+      console.log('Trust line token escrow enabled');
+    } else if (result.TransactionResult === 'tecNO_PERMISSION') {
+      console.log('Trust line token escrow already enabled');
+    } else {
+      throw new Error(`Failed to enable trust line token escrow: ${result.TransactionResult}`);
+    }
+  }
+}
+
 async function createTrustLine(
   client: Client,
   wallet: Wallet,
@@ -208,6 +232,7 @@ async function main() {
 
     // 2. Enable rippling on issuer
     await enableRippling(client, issuerWallet);
+    await enableTokenEscrow(client, issuerWallet);
     console.log();
 
     // 3. Create trust lines on backend wallet

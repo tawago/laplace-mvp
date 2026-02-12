@@ -22,8 +22,10 @@ import {
 import { toast } from 'sonner';
 
 import {
+  generateConditionFulfillment,
   getWalletFromSeed,
   sendTokenToBackend,
+  submitCollateralEscrow,
   type TokenBalance,
   type WalletInfo,
 } from '@/lib/client/xrpl';
@@ -36,6 +38,7 @@ interface Market {
   name: string;
   collateralCurrency: string;
   collateralIssuer: string;
+  collateralEscrowEnabled: boolean;
   debtCurrency: string;
   debtIssuer: string;
   maxLtvRatio: number;
@@ -237,20 +240,33 @@ export default function LendingPage() {
 
   const handleDeposit = useCallback(async () => {
     if (!wallet || !config || !selectedMarket) return;
+    if (!selectedMarket.collateralEscrowEnabled) {
+      toast.error('Collateral issuer has not enabled trust line token escrow for this market');
+      return;
+    }
     const amount = Number(depositAmount);
     if (!Number.isFinite(amount) || amount <= 0) return;
 
     await withAction('deposit', async () => {
-      const sendResult = await sendTokenToBackend(
+      const escrowPackage = await generateConditionFulfillment();
+      const sendResult = await submitCollateralEscrow(
         wallet.seed,
         config.backendAddress,
         selectedMarket.collateralCurrency,
         amount.toString(),
-        selectedMarket.collateralIssuer
+        selectedMarket.collateralIssuer,
+        escrowPackage.condition,
+        Math.floor(Date.now() / 1000) + 60 * 60 * 24
       );
 
       if (sendResult.result !== 'tesSUCCESS') {
-        toast.error(`Failed to send collateral: ${sendResult.result}`);
+        if (sendResult.result === 'tecNO_PERMISSION') {
+          toast.error(
+            'Escrow is not enabled for this issued token. Run setup:escrow(:devnet) to enable issuer trust line locking.'
+          );
+        } else {
+          toast.error(`Failed to create collateral escrow: ${sendResult.result}`);
+        }
         return;
       }
 
@@ -261,6 +277,9 @@ export default function LendingPage() {
           txHash: sendResult.hash,
           senderAddress: wallet.address,
           marketId: selectedMarket.id,
+          escrowCondition: escrowPackage.condition,
+          escrowFulfillment: escrowPackage.fulfillment,
+          escrowPreimage: escrowPackage.preimage,
         }),
       });
       const payload = await response.json();
@@ -269,7 +288,7 @@ export default function LendingPage() {
         return;
       }
 
-      toast.success('Deposit successful');
+      toast.success('Collateral escrow locked');
       await Promise.all([refreshBalances(), refreshPosition()]);
     });
   }, [
@@ -593,6 +612,11 @@ export default function LendingPage() {
                   </TabsList>
 
                   <TabsContent value="deposit" className="space-y-3">
+                    {!selectedMarket.collateralEscrowEnabled && (
+                      <p className="text-xs text-amber-700 dark:text-amber-300">
+                        Deposit disabled: issuer has not enabled trust line token escrow.
+                      </p>
+                    )}
                     <div className="flex items-center gap-3">
                       <input
                         type="number"
@@ -601,7 +625,14 @@ export default function LendingPage() {
                         className="w-40 rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
                       />
                       <span className="text-sm text-zinc-600 dark:text-zinc-400">{getTokenSymbol(selectedMarket.collateralCurrency)}</span>
-                      <Button onClick={handleDeposit} disabled={loading === 'deposit' || !collateralTrustlineReady}>
+                      <Button
+                        onClick={handleDeposit}
+                        disabled={
+                          loading === 'deposit' ||
+                          !collateralTrustlineReady ||
+                          !selectedMarket.collateralEscrowEnabled
+                        }
+                      >
                         {loading === 'deposit' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowDownLeft className="mr-2 h-4 w-4" />}
                         Deposit
                       </Button>

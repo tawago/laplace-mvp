@@ -46,6 +46,12 @@ export interface Position {
   openedAt: Date;
   closedAt: Date | null;
   liquidatedAt: Date | null;
+  escrowOwner: string | null;
+  escrowSequence: number | null;
+  escrowCondition: string | null;
+  escrowFulfillment: string | null;
+  escrowPreimage: string | null;
+  escrowCancelAfter: Date | null;
 }
 
 export interface SupplyPosition {
@@ -195,6 +201,7 @@ export interface DepositResult {
   positionId: string;
   collateralAmount: number;
   newCollateralTotal: number;
+  escrowSequence?: number;
 }
 
 export interface BorrowResult {
@@ -210,6 +217,7 @@ export interface RepayResult {
   interestPaid: number;
   principalPaid: number;
   remainingDebt: number;
+  collateralReleasedTxHash?: string;
 }
 
 export interface WithdrawResult {
@@ -217,6 +225,7 @@ export interface WithdrawResult {
   withdrawnAmount: number;
   remainingCollateral: number;
   txHash: string;
+  escrowFinishTxHash?: string;
 }
 
 export interface LiquidationResult {

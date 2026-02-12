@@ -128,6 +128,12 @@ export const positions = pgTable(
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     liquidatedAt: timestamp('liquidated_at', { withTimezone: true }),
+    escrowOwner: text('escrow_owner'),
+    escrowSequence: integer('escrow_sequence'),
+    escrowCondition: text('escrow_condition'),
+    escrowFulfillment: text('escrow_fulfillment'),
+    escrowPreimage: text('escrow_preimage'),
+    escrowCancelAfter: timestamp('escrow_cancel_after', { withTimezone: true }),
   },
   (table) => ({
     positionsUserMarketUnique: unique('positions_user_market_unique').on(table.userId, table.marketId),

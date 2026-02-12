@@ -32,6 +32,12 @@ export interface PositionRow {
   opened_at: string;
   closed_at: string | null;
   liquidated_at: string | null;
+  escrow_owner: string | null;
+  escrow_sequence: number | null;
+  escrow_condition: string | null;
+  escrow_fulfillment: string | null;
+  escrow_preimage: string | null;
+  escrow_cancel_after: string | null;
 }
 
 /**
@@ -51,7 +57,22 @@ function dbToPosition(row: DbPosition): Position {
     openedAt: row.openedAt,
     closedAt: row.closedAt,
     liquidatedAt: row.liquidatedAt,
+    escrowOwner: row.escrowOwner,
+    escrowSequence: row.escrowSequence,
+    escrowCondition: row.escrowCondition,
+    escrowFulfillment: row.escrowFulfillment,
+    escrowPreimage: row.escrowPreimage,
+    escrowCancelAfter: row.escrowCancelAfter,
   };
+}
+
+export interface PositionEscrowMetadata {
+  owner: string;
+  sequence: number;
+  condition: string;
+  fulfillment: string;
+  preimage: string;
+  cancelAfter: Date | null;
 }
 
 /**
@@ -328,6 +349,12 @@ export async function liquidatePosition(positionId: string): Promise<Position> {
       collateralAmount: '0',
       loanPrincipal: '0',
       interestAccrued: '0',
+      escrowOwner: null,
+      escrowSequence: null,
+      escrowCondition: null,
+      escrowFulfillment: null,
+      escrowPreimage: null,
+      escrowCancelAfter: null,
     })
     .where(eq(positions.id, positionId));
 
@@ -337,6 +364,37 @@ export async function liquidatePosition(positionId: string): Promise<Position> {
   }
 
   return position;
+}
+
+export async function setPositionEscrowMetadata(
+  positionId: string,
+  metadata: PositionEscrowMetadata
+): Promise<void> {
+  await db
+    .update(positions)
+    .set({
+      escrowOwner: metadata.owner,
+      escrowSequence: metadata.sequence,
+      escrowCondition: metadata.condition,
+      escrowFulfillment: metadata.fulfillment,
+      escrowPreimage: metadata.preimage,
+      escrowCancelAfter: metadata.cancelAfter,
+    })
+    .where(eq(positions.id, positionId));
+}
+
+export async function clearPositionEscrowMetadata(positionId: string): Promise<void> {
+  await db
+    .update(positions)
+    .set({
+      escrowOwner: null,
+      escrowSequence: null,
+      escrowCondition: null,
+      escrowFulfillment: null,
+      escrowPreimage: null,
+      escrowCancelAfter: null,
+    })
+    .where(eq(positions.id, positionId));
 }
 
 /**

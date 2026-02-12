@@ -39,10 +39,11 @@ import {
   calculatePositionMetrics,
   getLiquidatablePositions,
   checkPositionLiquidatable,
+  setPositionEscrowMetadata,
+  clearPositionEscrowMetadata,
 } from './positions';
 import {
   validateBorrow,
-  validateWithdrawal,
   allocateRepayment,
   calculateLiquidationCollateral,
   calculateTotalDebt,
@@ -83,6 +84,12 @@ import {
   createSupplyVault,
   getSupplierShareBalance,
 } from '../xrpl/vault';
+import {
+  finishEscrow,
+  getEscrowInfo,
+  verifyEscrowMatchesExpected,
+  verifyConditionFulfillment,
+} from '../xrpl/escrow';
 
 export interface LendingServiceError {
   code: string;
@@ -149,6 +156,27 @@ function extractTransactionResult(
   if (!rawMeta) return null;
   const value = rawMeta.TransactionResult;
   return typeof value === 'string' ? value : null;
+}
+
+function extractEscrowSequence(rawTx: Record<string, unknown> | null | undefined): number | null {
+  if (!rawTx) return null;
+  const value = rawTx.Sequence;
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
+}
+
+function extractEscrowCondition(rawTx: Record<string, unknown> | null | undefined): string | null {
+  if (!rawTx) return null;
+  const value = rawTx.Condition;
+  return typeof value === 'string' && value.length > 0 ? value.toUpperCase() : null;
+}
+
+function extractEscrowCancelAfter(rawTx: Record<string, unknown> | null | undefined): Date | null {
+  if (!rawTx) return null;
+  const value = rawTx.CancelAfter;
+  if (typeof value !== 'number') {
+    return null;
+  }
+  return new Date((value + 946684800) * 1000);
 }
 
 async function ensureMarketSupplyVaultConfigured(market: MarketRecord): Promise<MarketRecord> {
@@ -282,7 +310,10 @@ export async function processDeposit(
   txHash: string,
   senderAddress: string,
   marketId: string,
-  idempotencyKey?: string
+  idempotencyKey?: string,
+  escrowCondition?: string,
+  escrowFulfillment?: string,
+  escrowPreimage?: string
 ): Promise<{ result?: DepositResult; error?: LendingServiceError }> {
   // Check for replay
   if (await isTransactionProcessed(txHash)) {
@@ -303,17 +334,59 @@ export async function processDeposit(
     userAddress: senderAddress,
     marketId,
     idempotencyKey,
-    payload: { txHash },
+    payload: { txHash, escrowCondition },
   });
 
   try {
+    if (!escrowCondition || !escrowFulfillment || !escrowPreimage) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'MISSING_ESCROW_PARAMS',
+        message: 'Escrow condition, fulfillment, and preimage are required',
+      });
+      return {
+        error: createError(
+          'MISSING_ESCROW_PARAMS',
+          'Escrow condition, fulfillment, and preimage are required'
+        ),
+      };
+    }
+
+    const packageCheck = verifyConditionFulfillment(
+      escrowCondition,
+      escrowFulfillment,
+      escrowPreimage
+    );
+    if (!packageCheck.valid) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'INVALID_ESCROW_PARAMS',
+        message: packageCheck.reason || 'Invalid escrow condition package',
+      });
+      return {
+        error: createError(
+          'INVALID_ESCROW_PARAMS',
+          packageCheck.reason || 'Invalid escrow condition package'
+        ),
+      };
+    }
+
     const client = await getClient();
     const tx = await verifyTransaction(client, txHash);
+    const txResult = extractTransactionResult(tx.rawMeta);
 
     // Validate transaction
     if (!tx.validated) {
       await updateEventStatus(event.id, 'FAILED', { code: 'TX_NOT_VALIDATED', message: 'Transaction not validated' });
       return { error: createError('TX_NOT_VALIDATED', 'Transaction not yet validated') };
+    }
+
+    if (txResult !== 'tesSUCCESS') {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'TX_FAILED',
+        message: `EscrowCreate failed on-ledger (${txResult ?? 'unknown'})`,
+      });
+      return {
+        error: createError('TX_FAILED', `EscrowCreate failed on-ledger (${txResult ?? 'unknown'})`),
+      };
     }
 
     const backendAddress = getBackendAddress();
@@ -322,13 +395,24 @@ export async function processDeposit(
       return { error: createError('WRONG_DESTINATION', `Transaction must be sent to ${backendAddress}`) };
     }
 
-    if (tx.transactionType !== 'Payment') {
+    if (tx.transactionType !== 'EscrowCreate') {
       await updateEventStatus(event.id, 'FAILED', {
-        code: 'NOT_PAYMENT',
-        message: 'Transaction must be a Payment',
+        code: 'NOT_ESCROW_CREATE',
+        message: 'Transaction must be an EscrowCreate',
       });
       return {
-        error: createError('NOT_PAYMENT', `Expected Payment, got ${tx.transactionType}`),
+        error: createError('NOT_ESCROW_CREATE', `Expected EscrowCreate, got ${tx.transactionType}`),
+      };
+    }
+
+    const txEscrowCondition = extractEscrowCondition(tx.rawTx);
+    if (!txEscrowCondition || txEscrowCondition !== escrowCondition.toUpperCase()) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_ESCROW_CONDITION',
+        message: 'Escrow condition mismatch',
+      });
+      return {
+        error: createError('WRONG_ESCROW_CONDITION', 'Escrow condition mismatch'),
       };
     }
 
@@ -379,6 +463,48 @@ export async function processDeposit(
       };
     }
 
+    const escrowSequence = extractEscrowSequence(tx.rawTx);
+    if (escrowSequence === null) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'MISSING_ESCROW_SEQUENCE',
+        message: 'EscrowCreate transaction sequence is missing',
+      });
+      return {
+        error: createError('MISSING_ESCROW_SEQUENCE', 'EscrowCreate transaction sequence is missing'),
+      };
+    }
+
+    const escrowObject = await getEscrowInfo(client, {
+      owner: senderAddress,
+      sequence: escrowSequence,
+    });
+
+    if (!escrowObject) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'ESCROW_NOT_FOUND',
+        message: 'Escrow object not found on ledger',
+      });
+      return { error: createError('ESCROW_NOT_FOUND', 'Escrow object not found on ledger') };
+    }
+
+    const escrowMatch = verifyEscrowMatchesExpected(escrowObject, {
+      owner: senderAddress,
+      destination: backendAddress,
+      sequence: escrowSequence,
+      currency: market.collateral_currency,
+      issuer: market.collateral_issuer,
+      amount: tx.amount.value,
+      condition: escrowCondition,
+    });
+
+    if (!escrowMatch.valid) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'ESCROW_MISMATCH',
+        message: escrowMatch.reason || 'Escrow terms mismatch',
+      });
+      return { error: createError('ESCROW_MISMATCH', escrowMatch.reason || 'Escrow terms mismatch') };
+    }
+
     // Record on-chain transaction
     const onchainTx = await upsertOnchainTransaction({
       txHash,
@@ -389,13 +515,47 @@ export async function processDeposit(
       currency: tx.amount.currency,
       issuer: tx.amount.issuer,
       amount,
-      rawTxJson: buildInboundRawTxJson(tx),
+      rawTxJson: {
+        ...buildInboundRawTxJson(tx),
+        operation: 'ESCROW_CREATE',
+        escrowOwner: senderAddress,
+        escrowSequence,
+        escrowCondition: escrowCondition.toUpperCase(),
+      },
       rawMetaJson: tx.rawMeta || null,
     });
 
     // Create or update position
-    const position = await getOrCreatePosition(senderAddress, marketId, market.base_interest_rate);
+    const existingPosition = await getPositionForUser(senderAddress, marketId);
+    if (
+      existingPosition &&
+      (existingPosition.collateralAmount > 0 ||
+        existingPosition.escrowSequence !== null ||
+        existingPosition.escrowCondition !== null)
+    ) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'COLLATERAL_ALREADY_LOCKED',
+        message: 'Position already has active escrow-backed collateral',
+      });
+      return {
+        error: createError(
+          'COLLATERAL_ALREADY_LOCKED',
+          'Position already has active escrow-backed collateral'
+        ),
+      };
+    }
+
+    const position = existingPosition ??
+      (await getOrCreatePosition(senderAddress, marketId, market.base_interest_rate));
     const updatedPosition = await addCollateral(position.id, amount);
+    await setPositionEscrowMetadata(position.id, {
+      owner: senderAddress,
+      sequence: escrowSequence,
+      condition: escrowCondition.toUpperCase(),
+      fulfillment: escrowFulfillment.toUpperCase(),
+      preimage: escrowPreimage.toUpperCase(),
+      cancelAfter: extractEscrowCancelAfter(tx.rawTx),
+    });
 
     // Update event
     await updateEventStatus(event.id, 'COMPLETED');
@@ -409,6 +569,7 @@ export async function processDeposit(
       onchainTxId: onchainTx.id,
       amount,
       currency: market.collateral_currency,
+      payload: { txHash, escrowSequence },
     });
 
     return {
@@ -416,6 +577,7 @@ export async function processDeposit(
         positionId: updatedPosition.id,
         collateralAmount: amount,
         newCollateralTotal: updatedPosition.collateralAmount,
+        escrowSequence,
       },
     };
   } catch (err) {
@@ -759,6 +921,93 @@ export async function processRepay(
     }
     const finalPosition = await applyRepayment(position.id, interestPaid, principalPaid);
     const remainingDebt = calculateTotalDebt(finalPosition.loanPrincipal, finalPosition.interestAccrued);
+    let collateralReleasedTxHash: string | undefined;
+
+    if (remainingDebt <= 0 && finalPosition.collateralAmount > 0) {
+      if (
+        !finalPosition.escrowOwner ||
+        finalPosition.escrowSequence === null ||
+        !finalPosition.escrowFulfillment ||
+        !finalPosition.escrowCondition
+      ) {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'ESCROW_NOT_CONFIGURED',
+          message: 'Position escrow metadata is missing',
+        });
+        return {
+          error: createError('ESCROW_NOT_CONFIGURED', 'Position escrow metadata is missing'),
+        };
+      }
+
+      const backendWallet = getBackendWallet();
+      const client = await getClient();
+      const finishTx = await finishEscrow(backendWallet, {
+        owner: finalPosition.escrowOwner,
+        sequence: finalPosition.escrowSequence,
+        fulfillment: finalPosition.escrowFulfillment,
+        condition: finalPosition.escrowCondition,
+      });
+
+      await upsertOnchainTransaction({
+        txHash: finishTx.txHash,
+        validated: true,
+        txType: 'EscrowFinish',
+        sourceAddress: backendWallet.address,
+        destinationAddress: getBackendAddress(),
+        currency: market.collateral_currency,
+        issuer: market.collateral_issuer,
+        amount: finalPosition.collateralAmount,
+        rawTxJson: {
+          operation: 'ESCROW_FINISH_RELEASE',
+          owner: finalPosition.escrowOwner,
+          sequence: finalPosition.escrowSequence,
+        },
+        rawMetaJson: null,
+      });
+
+      const payoutTx = await sendToken(
+        client,
+        backendWallet,
+        senderAddress,
+        market.collateral_currency,
+        finalPosition.collateralAmount.toString(),
+        market.collateral_issuer
+      );
+
+      if (payoutTx.result !== 'tesSUCCESS') {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'COLLATERAL_PAYOUT_FAILED',
+          message: `Collateral payout failed: ${payoutTx.result}`,
+        });
+        return {
+          error: createError('COLLATERAL_PAYOUT_FAILED', `Collateral payout failed: ${payoutTx.result}`),
+        };
+      }
+
+      await upsertOnchainTransaction({
+        txHash: payoutTx.hash,
+        validated: true,
+        txType: payoutTx.transactionType ?? 'Payment',
+        sourceAddress: backendWallet.address,
+        destinationAddress: senderAddress,
+        currency: market.collateral_currency,
+        issuer: market.collateral_issuer,
+        amount: finalPosition.collateralAmount,
+        rawTxJson: buildOutboundRawTxJson({
+          tx: payoutTx,
+          sourceAddress: backendWallet.address,
+          destinationAddress: senderAddress,
+          currency: market.collateral_currency,
+          issuer: market.collateral_issuer,
+          amount: finalPosition.collateralAmount,
+        }),
+        rawMetaJson: payoutTx.rawMeta || null,
+      });
+
+      await removeCollateral(finalPosition.id, finalPosition.collateralAmount);
+      await clearPositionEscrowMetadata(finalPosition.id);
+      collateralReleasedTxHash = payoutTx.hash;
+    }
 
     // Update event
     await updateEventStatus(event.id, 'COMPLETED');
@@ -772,7 +1021,7 @@ export async function processRepay(
       onchainTxId: onchainTx.id,
       amount,
       currency: market.debt_currency,
-      payload: { interestPaid, principalPaid, excess },
+      payload: { interestPaid, principalPaid, excess, collateralReleasedTxHash },
     });
 
     return {
@@ -782,6 +1031,7 @@ export async function processRepay(
         interestPaid,
         principalPaid,
         remainingDebt,
+        collateralReleasedTxHash,
       },
     };
   } catch (err) {
@@ -865,103 +1115,123 @@ export async function processWithdraw(
   }
   // === END IDEMPOTENCY ===
 
-  const prices = await getMarketPrices(marketId);
-  if (!prices) {
-    return { error: createError('PRICES_NOT_FOUND', 'Market prices not available') };
-  }
-
-  // Get position
   const position = await getPositionForUser(userAddress, marketId);
   if (!position) {
     return { error: createError('NO_POSITION', 'No active position found') };
   }
 
-  if (amount > position.collateralAmount) {
-    return { error: createError('INSUFFICIENT_COLLATERAL', 'Insufficient collateral balance') };
-  }
-
-  // Accrue interest
   const updatedPosition = await accrueInterest(position);
   const totalDebt = calculateTotalDebt(updatedPosition.loanPrincipal, updatedPosition.interestAccrued);
 
-  // Validate LTV after withdrawal
-  const canWithdraw = validateWithdrawal(
-    updatedPosition.collateralAmount,
-    amount,
-    prices.collateralPriceUsd,
-    totalDebt,
-    prices.debtPriceUsd,
-    market.max_ltv_ratio
-  );
+  if (totalDebt > 0) {
+    return {
+      error: createError('DEBT_OUTSTANDING', 'Repay all debt before withdrawing escrowed collateral'),
+    };
+  }
 
-  if (!canWithdraw) {
+  if (Math.abs(amount - updatedPosition.collateralAmount) > 0.00000001) {
     return {
       error: createError(
-        'EXCEEDS_MAX_LTV',
-        `Withdrawal would exceed maximum LTV of ${market.max_ltv_ratio * 100}%`
+        'FULL_WITHDRAW_REQUIRED',
+        `Escrow-backed collateral requires full withdrawal of ${updatedPosition.collateralAmount}`
       ),
     };
   }
 
+  if (
+    !updatedPosition.escrowOwner ||
+    updatedPosition.escrowSequence === null ||
+    !updatedPosition.escrowFulfillment ||
+    !updatedPosition.escrowCondition
+  ) {
+    return {
+      error: createError('ESCROW_NOT_CONFIGURED', 'Position escrow metadata is missing'),
+    };
+  }
+
   try {
-    // Send collateral back to user
     const client = await getClient();
     const backendWallet = getBackendWallet();
-    const issuerAddress = getIssuerAddress();
+    const finishTx = await finishEscrow(backendWallet, {
+      owner: updatedPosition.escrowOwner,
+      sequence: updatedPosition.escrowSequence,
+      fulfillment: updatedPosition.escrowFulfillment,
+      condition: updatedPosition.escrowCondition,
+    });
 
-    const tx = await sendToken(
+    await upsertOnchainTransaction({
+      txHash: finishTx.txHash,
+      validated: true,
+      txType: 'EscrowFinish',
+      sourceAddress: backendWallet.address,
+      destinationAddress: getBackendAddress(),
+      currency: market.collateral_currency,
+      issuer: market.collateral_issuer,
+      amount,
+      rawTxJson: {
+        operation: 'ESCROW_FINISH_WITHDRAW',
+        owner: updatedPosition.escrowOwner,
+        sequence: updatedPosition.escrowSequence,
+      },
+      rawMetaJson: null,
+    });
+
+    const payoutTx = await sendToken(
       client,
       backendWallet,
       userAddress,
       market.collateral_currency,
       amount.toString(),
-      issuerAddress
+      market.collateral_issuer
     );
 
-    if (tx.result !== 'tesSUCCESS') {
-      await updateEventStatus(event.id, 'FAILED', { code: 'TX_FAILED', message: tx.result });
-      return { error: createError('TX_FAILED', `Failed to send tokens: ${tx.result}`) };
+    if (payoutTx.result !== 'tesSUCCESS') {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'COLLATERAL_PAYOUT_FAILED',
+        message: `Failed to return collateral: ${payoutTx.result}`,
+      });
+      return {
+        error: createError('COLLATERAL_PAYOUT_FAILED', `Failed to return collateral: ${payoutTx.result}`),
+      };
     }
 
-    // Record on-chain transaction
     await upsertOnchainTransaction({
-      txHash: tx.hash,
+      txHash: payoutTx.hash,
       validated: true,
-      txType: tx.transactionType ?? 'Payment',
+      txType: payoutTx.transactionType ?? 'Payment',
       sourceAddress: backendWallet.address,
       destinationAddress: userAddress,
       currency: market.collateral_currency,
-      issuer: issuerAddress,
+      issuer: market.collateral_issuer,
       amount,
       rawTxJson: buildOutboundRawTxJson({
-        tx,
+        tx: payoutTx,
         sourceAddress: backendWallet.address,
         destinationAddress: userAddress,
         currency: market.collateral_currency,
-        issuer: issuerAddress,
+        issuer: market.collateral_issuer,
         amount,
       }),
-      rawMetaJson: tx.rawMeta || null,
+      rawMetaJson: payoutTx.rawMeta || null,
     });
 
-    // Update position
-    const finalPosition = await removeCollateral(position.id, amount);
+    const finalPosition = await removeCollateral(updatedPosition.id, amount);
+    await clearPositionEscrowMetadata(updatedPosition.id);
 
     const withdrawResult: WithdrawResult = {
       positionId: finalPosition.id,
       withdrawnAmount: amount,
       remainingCollateral: finalPosition.collateralAmount,
-      txHash: tx.hash,
+      txHash: payoutTx.hash,
+      escrowFinishTxHash: finishTx.txHash,
     };
 
-    // Complete idempotency event with result
     if (idempotencyKey) {
       await completeIdempotencyEvent(event.id, { result: withdrawResult });
     } else {
       await updateEventStatus(event.id, 'COMPLETED');
     }
 
-    // Emit separate audit event (no idempotency key)
     await emitAppEvent({
       eventType: LENDING_EVENTS.WITHDRAW_COMPLETED,
       module: 'LENDING',
@@ -971,7 +1241,7 @@ export async function processWithdraw(
       positionId: position.id,
       amount,
       currency: market.collateral_currency,
-      payload: { txHash: tx.hash },
+      payload: { txHash: payoutTx.hash, escrowFinishTxHash: finishTx.txHash },
     });
 
     return { result: withdrawResult };
@@ -1043,6 +1313,41 @@ export async function processLiquidation(
     try {
       // Accrue interest
       const updatedPosition = await accrueInterest(position);
+
+      if (
+        !updatedPosition.escrowOwner ||
+        updatedPosition.escrowSequence === null ||
+        !updatedPosition.escrowFulfillment ||
+        !updatedPosition.escrowCondition
+      ) {
+        throw new Error('Position escrow metadata is missing');
+      }
+
+      const backendWallet = getBackendWallet();
+      const finishTx = await finishEscrow(backendWallet, {
+        owner: updatedPosition.escrowOwner,
+        sequence: updatedPosition.escrowSequence,
+        fulfillment: updatedPosition.escrowFulfillment,
+        condition: updatedPosition.escrowCondition,
+      });
+
+      await upsertOnchainTransaction({
+        txHash: finishTx.txHash,
+        validated: true,
+        txType: 'EscrowFinish',
+        sourceAddress: backendWallet.address,
+        destinationAddress: getBackendAddress(),
+        currency: market.collateral_currency,
+        issuer: market.collateral_issuer,
+        amount: updatedPosition.collateralAmount,
+        rawTxJson: {
+          operation: 'ESCROW_FINISH_LIQUIDATION',
+          owner: updatedPosition.escrowOwner,
+          sequence: updatedPosition.escrowSequence,
+        },
+        rawMetaJson: null,
+      });
+
       const totalDebt = calculateTotalDebt(updatedPosition.loanPrincipal, updatedPosition.interestAccrued);
 
       // Calculate collateral to seize
