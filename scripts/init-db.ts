@@ -57,10 +57,12 @@ async function main() {
     getMarketPrices,
     getAllActiveMarkets,
     setMarketSupplyVaultConfig,
+    setMarketLoanBrokerConfig,
   } = await import('../src/lib/db/seed');
-  const { getBackendWallet } = await import('../src/lib/xrpl/wallet');
+  const { getBackendWallet, getLoanBrokerWallet } = await import('../src/lib/xrpl/wallet');
   const { getClient } = await import('../src/lib/xrpl/client');
   const { checkVaultSupport, createSupplyVault } = await import('../src/lib/xrpl/vault');
+  const { checkLoanProtocolSupport, createLoanBroker } = await import('../src/lib/xrpl/loan');
 
   console.log('='.repeat(60));
   console.log(`Database Initialization (Neon + Drizzle / ${selectedNetwork})`);
@@ -129,6 +131,38 @@ async function main() {
       });
 
       console.log(`- ${market.name}: created vault ${createdVault.vaultId}`);
+    }
+    console.log();
+
+    console.log('Provisioning loan brokers...');
+    const loanSupport = await checkLoanProtocolSupport(client);
+    if (!loanSupport.enabled) {
+      throw new Error(loanSupport.reason || 'Loan protocol support is not enabled on connected XRPL network');
+    }
+
+    const loanBrokerWallet = getLoanBrokerWallet();
+    const marketsWithVaults = await getAllActiveMarkets();
+    for (const market of marketsWithVaults) {
+      if (market.loan_broker_id && market.loan_broker_address) {
+        console.log(`- ${market.name}: existing loan broker ${market.loan_broker_id}`);
+        continue;
+      }
+
+      if (!market.supply_vault_id) {
+        throw new Error(`Market ${market.name} is missing supply vault configuration`);
+      }
+
+      const createdBroker = await createLoanBroker(loanBrokerWallet, {
+        vaultId: market.supply_vault_id,
+        feeBps: 0,
+      });
+
+      await setMarketLoanBrokerConfig(market.id, {
+        loanBrokerId: createdBroker.brokerId,
+        loanBrokerAddress: createdBroker.brokerAddress,
+      });
+
+      console.log(`- ${market.name}: created loan broker ${createdBroker.brokerId}`);
     }
     console.log();
 

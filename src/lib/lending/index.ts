@@ -86,6 +86,8 @@ export {
 // Main service
 export {
   processDeposit,
+  prepareBorrow,
+  confirmBorrowWithSignedTx,
   processBorrow,
   processRepay,
   processWithdraw,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { processBorrow } from '@/lib/lending';
+import { confirmBorrowWithSignedTx, prepareBorrow } from '@/lib/lending';
 
 /**
  * POST /api/lending/borrow
@@ -15,7 +15,7 @@ import { processBorrow } from '@/lib/lending';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userAddress, marketId, amount, idempotencyKey } = body;
+    const { userAddress, marketId, amount, idempotencyKey, signedTxJson } = body;
 
     // Validate required fields
     if (!userAddress) {
@@ -59,7 +59,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { result, error } = await processBorrow(userAddress, marketId, amount, idempotencyKey);
+    if (signedTxJson !== undefined && (typeof signedTxJson !== 'object' || signedTxJson === null)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'INVALID_SIGNED_TX', message: 'signedTxJson must be an object when provided' },
+        },
+        { status: 400 }
+      );
+    }
+
+    const response = signedTxJson
+      ? await confirmBorrowWithSignedTx(
+          userAddress,
+          marketId,
+          amount,
+          signedTxJson as Record<string, unknown>,
+          idempotencyKey
+        )
+      : await prepareBorrow(userAddress, marketId, amount);
+
+    const { result, error } = response;
 
     if (error) {
       let status = 400;
@@ -68,10 +88,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error }, { status });
     }
 
-    return NextResponse.json({
-      success: true,
-      data: result,
-    });
+    return NextResponse.json({ success: true, data: result });
   } catch (error) {
     console.error('Borrow error:', error);
     return NextResponse.json(

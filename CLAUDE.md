@@ -74,6 +74,7 @@ It includes a real backend/service layer for lending flows (via Next.js API rout
 - Core lending service lives in `src/lib/lending/service.ts`.
 - XRPL helpers live in `src/lib/xrpl/*` (server) and `src/lib/client/xrpl.ts` (client).
 - DB schema source of truth: `src/lib/db/schema.ts`.
+- Use Neon CLI for investigation
 
 ### Important Notes
 - Do not remove legacy hotel pages/components unless explicitly requested; they are still used.

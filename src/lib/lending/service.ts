@@ -7,9 +7,14 @@
  */
 
 import Decimal from 'decimal.js';
+import type { Client } from 'xrpl';
 import { eq } from 'drizzle-orm';
 import { getClient } from '../xrpl/client';
-import { getBackendWallet, getIssuerAddress, getBackendAddress } from '../xrpl/wallet';
+import {
+  getBackendWallet,
+  getBackendAddress,
+  getLoanBrokerWallet,
+} from '../xrpl/wallet';
 import {
   verifyTransaction,
   sendToken,
@@ -41,6 +46,7 @@ import {
   checkPositionLiquidatable,
   setPositionEscrowMetadata,
   clearPositionEscrowMetadata,
+  setPositionLoanMetadata,
 } from './positions';
 import {
   validateBorrow,
@@ -85,6 +91,15 @@ import {
   getSupplierShareBalance,
 } from '../xrpl/vault';
 import {
+  checkLoanProtocolSupport,
+  createLoanBroker,
+  buildLoanSetTransaction,
+  extractLoanSetResult,
+  getLoanInfo,
+  LoanProtocolError,
+  type LoanSetResult,
+} from '../xrpl/loan';
+import {
   finishEscrow,
   getEscrowInfo,
   verifyEscrowMatchesExpected,
@@ -94,6 +109,10 @@ import {
 export interface LendingServiceError {
   code: string;
   message: string;
+}
+
+export interface BorrowPrepareResult {
+  unsignedTx: Record<string, unknown>;
 }
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_DOWN });
@@ -215,6 +234,387 @@ async function ensureMarketSupplyVaultConfigured(market: MarketRecord): Promise<
   return refreshed;
 }
 
+function rippleEpochToDate(value: number | null): Date | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return new Date((value + 946684800) * 1000);
+}
+
+function parseNumericLike(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+interface BorrowContext {
+  market: MarketRecord;
+  position: Position;
+  updatedPosition: Position;
+}
+
+async function loadBorrowContext(
+  userAddress: string,
+  marketId: string,
+  amount: number
+): Promise<{ context?: BorrowContext; error?: LendingServiceError }> {
+  const marketRow = await getMarketById(marketId);
+  if (!marketRow) {
+    return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
+  }
+
+  let market: MarketRecord;
+  try {
+    market = await ensureMarketLoanBrokerConfigured(marketRow);
+  } catch (error) {
+    return {
+      error: createError(
+        'LOAN_BROKER_NOT_CONFIGURED',
+        error instanceof Error ? error.message : 'Loan broker is not configured'
+      ),
+    };
+  }
+
+  const prices = await getMarketPrices(marketId);
+  if (!prices) {
+    return { error: createError('PRICES_NOT_FOUND', 'Market prices not available') };
+  }
+
+  if (amount < market.min_borrow_amount) {
+    return {
+      error: createError('BELOW_MINIMUM', `Minimum borrow is ${market.min_borrow_amount} ${market.debt_currency}`),
+    };
+  }
+
+  const position = await getPositionForUser(userAddress, marketId);
+  if (!position) {
+    return { error: createError('NO_POSITION', 'No active position found. Deposit collateral first.') };
+  }
+
+  const updatedPosition = await accrueInterest(position);
+  const totalDebt = calculateTotalDebt(updatedPosition.loanPrincipal, updatedPosition.interestAccrued);
+
+  const canBorrow = validateBorrow(
+    updatedPosition.collateralAmount,
+    prices.collateralPriceUsd,
+    totalDebt,
+    amount,
+    prices.debtPriceUsd,
+    market.max_ltv_ratio
+  );
+
+  if (!canBorrow) {
+    return {
+      error: createError('EXCEEDS_MAX_LTV', `Borrow would exceed maximum LTV of ${market.max_ltv_ratio * 100}%`),
+    };
+  }
+
+  const availableLiquidity = await getAvailableLiquidity(marketId);
+  if (amount > availableLiquidity) {
+    return {
+      error: createError(
+        'INSUFFICIENT_POOL_LIQUIDITY',
+        `Borrow amount exceeds pool liquidity (${availableLiquidity} ${market.debt_currency})`
+      ),
+    };
+  }
+
+  return {
+    context: {
+      market,
+      position,
+      updatedPosition,
+    },
+  };
+}
+
+async function waitForLoanSetResult(client: Client, txHash: string, retries = 12): Promise<LoanSetResult> {
+  let lastError: unknown;
+  for (let i = 0; i < retries; i += 1) {
+    try {
+      return await extractLoanSetResult(client, txHash);
+    } catch (error) {
+      lastError = error;
+      if (error instanceof LoanProtocolError && error.code === 'TX_NOT_VALIDATED') {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('LoanSet validation timeout');
+}
+
+async function ensureMarketLoanBrokerConfigured(market: MarketRecord): Promise<MarketRecord> {
+  if (market.loan_broker_id && market.loan_broker_address) {
+    return market;
+  }
+
+  let workingMarket = market;
+  if (!workingMarket.supply_vault_id) {
+    workingMarket = await ensureMarketSupplyVaultConfigured(workingMarket);
+  }
+
+  if (!workingMarket.supply_vault_id) {
+    throw new Error('Supply vault must be configured before creating a loan broker');
+  }
+
+  const client = await getClient();
+  const support = await checkLoanProtocolSupport(client);
+  if (!support.enabled) {
+    throw new Error(support.reason || 'XRPL loan protocol support is not enabled on this network');
+  }
+
+  const loanBrokerWallet = getLoanBrokerWallet();
+  const created = await createLoanBroker(loanBrokerWallet, {
+    vaultId: workingMarket.supply_vault_id,
+    feeBps: 0,
+  });
+
+  await db
+    .update(markets)
+    .set({
+      loanBrokerId: created.brokerId,
+      loanBrokerAddress: created.brokerAddress,
+      updatedAt: new Date(),
+    })
+    .where(eq(markets.id, workingMarket.id));
+
+  const refreshed = await getMarketById(workingMarket.id);
+  if (!refreshed) {
+    throw new Error('Market not found after loan broker provisioning');
+  }
+
+  return refreshed;
+}
+
+export async function prepareBorrow(
+  userAddress: string,
+  marketId: string,
+  amount: number
+): Promise<{ result?: BorrowPrepareResult; error?: LendingServiceError }> {
+  const loaded = await loadBorrowContext(userAddress, marketId, amount);
+  if (loaded.error || !loaded.context) {
+    return { error: loaded.error || createError('INTERNAL_ERROR', 'Failed to load borrow context') };
+  }
+
+  const { market } = loaded.context;
+  if (!market.loan_broker_id) {
+    return { error: createError('LOAN_BROKER_NOT_CONFIGURED', 'Market loan broker id is not configured') };
+  }
+
+  const loanBrokerWallet = getLoanBrokerWallet();
+  const client = await getClient();
+
+  const txTemplate = buildLoanSetTransaction({
+    account: userAddress,
+    borrower: userAddress,
+    loanBrokerId: market.loan_broker_id,
+    principal: {
+      currency: market.debt_currency,
+      issuer: market.debt_issuer,
+      value: amount.toString(),
+    },
+    collateral: {
+      currency: market.collateral_currency,
+      issuer: market.collateral_issuer,
+      value: loaded.context.updatedPosition.collateralAmount.toString(),
+    },
+    termMonths: 3,
+    annualInterestBps: Math.round(market.base_interest_rate * 10000),
+    additionalFields: {
+      Counterparty: loanBrokerWallet.address,
+      PaymentInterval: 60 * 60 * 24 * 30,
+      GracePeriod: 60 * 60 * 24 * 7,
+    },
+  });
+
+  const unsignedTx = await client.autofill(txTemplate as never);
+  return { result: { unsignedTx: unsignedTx as unknown as Record<string, unknown> } };
+}
+
+export async function confirmBorrowWithSignedTx(
+  userAddress: string,
+  marketId: string,
+  amount: number,
+  signedTxJson: Record<string, unknown>,
+  idempotencyKey?: string
+): Promise<{ result?: BorrowResult; error?: LendingServiceError }> {
+  const loaded = await loadBorrowContext(userAddress, marketId, amount);
+  if (loaded.error || !loaded.context) {
+    return { error: loaded.error || createError('INTERNAL_ERROR', 'Failed to load borrow context') };
+  }
+
+  const { market, position } = loaded.context;
+  const loanBrokerWallet = getLoanBrokerWallet();
+
+  if (!market.loan_broker_id) {
+    return { error: createError('LOAN_BROKER_NOT_CONFIGURED', 'Market loan broker id is not configured') };
+  }
+
+  const account = signedTxJson.Account;
+  if (typeof account !== 'string' || account !== userAddress) {
+    return { error: createError('INVALID_SIGNED_TX', 'Signed transaction account mismatch') };
+  }
+
+  const txType = signedTxJson.TransactionType;
+  if (txType !== 'LoanSet') {
+    return { error: createError('INVALID_SIGNED_TX', 'Signed transaction must be LoanSet') };
+  }
+
+  const counterparty = signedTxJson.Counterparty;
+  if (typeof counterparty !== 'string' || counterparty !== loanBrokerWallet.address) {
+    return { error: createError('INVALID_SIGNED_TX', 'Signed transaction counterparty mismatch') };
+  }
+
+  const brokerId = signedTxJson.LoanBrokerID;
+  if (typeof brokerId !== 'string' || brokerId !== market.loan_broker_id) {
+    return { error: createError('INVALID_SIGNED_TX', 'Signed transaction loan broker id mismatch') };
+  }
+
+  const principalRequested = parseNumericLike(signedTxJson.PrincipalRequested);
+  if (principalRequested === null || principalRequested !== amount) {
+    return { error: createError('INVALID_SIGNED_TX', 'Signed transaction principal does not match requested amount') };
+  }
+
+  if (typeof signedTxJson.SigningPubKey !== 'string' || typeof signedTxJson.TxnSignature !== 'string') {
+    return { error: createError('INVALID_SIGNED_TX', 'Signed transaction is missing borrower signature fields') };
+  }
+
+  const client = await getClient();
+
+  let event: AppEventRow;
+  if (idempotencyKey) {
+    const acquireResult = await acquireIdempotencyKey({
+      eventType: LENDING_EVENTS.BORROW_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      idempotencyKey,
+      amount,
+      currency: market.debt_currency,
+      payload: {},
+    });
+
+    if (!acquireResult.acquired) {
+      const existingEvent = acquireResult.event;
+      if (!validateIdempotencyIdentity(existingEvent, { eventType: LENDING_EVENTS.BORROW_INITIATED, userAddress, marketId })) {
+        return { error: createError('IDEMPOTENCY_MISMATCH', 'Idempotency key used for different operation') };
+      }
+      if (acquireResult.status === 'COMPLETED') {
+        const storedResult = reconstructResult<BorrowResult>(existingEvent);
+        if (storedResult) return { result: storedResult };
+        return { error: createError('ALREADY_COMPLETED', 'Operation completed but result unavailable') };
+      }
+      if (acquireResult.status === 'PENDING') {
+        return { error: createError('OPERATION_IN_PROGRESS', 'Operation already in progress') };
+      }
+      event = existingEvent;
+      await updateEventStatus(event.id, 'PENDING');
+    } else {
+      event = acquireResult.event;
+    }
+  } else {
+    event = await emitAppEvent({
+      eventType: LENDING_EVENTS.BORROW_INITIATED,
+      module: 'LENDING',
+      status: 'PENDING',
+      userAddress,
+      marketId,
+      amount,
+      currency: market.debt_currency,
+    });
+  }
+
+  try {
+    const signResponse = (await client.request({
+      command: 'sign',
+      tx_json: signedTxJson as never,
+      secret: loanBrokerWallet.seed,
+      signature_target: 'CounterpartySignature',
+    } as never)) as { result?: { tx_json?: Record<string, unknown> } };
+
+    const fullySignedTx = signResponse.result?.tx_json as Record<string, unknown> | undefined;
+    if (!fullySignedTx) {
+      throw new Error('Missing fully signed LoanSet payload');
+    }
+
+    const submitResponse = (await client.submit(fullySignedTx as never)) as {
+      result?: { tx_json?: { hash?: string } };
+    };
+    const txHash = submitResponse.result?.tx_json?.hash;
+    if (typeof txHash !== 'string') {
+      throw new Error('LoanSet submission did not return transaction hash');
+    }
+
+    const loanSet = await waitForLoanSetResult(client, txHash);
+    const loanInfo = await getLoanInfo(client, loanSet.loanId);
+
+    await upsertOnchainTransaction({
+      txHash: loanSet.txHash,
+      validated: true,
+      txType: 'LoanSet',
+      sourceAddress: userAddress,
+      destinationAddress: loanBrokerWallet.address,
+      currency: market.debt_currency,
+      issuer: market.debt_issuer,
+      amount,
+      rawTxJson: loanSet.rawTx,
+      rawMetaJson: loanSet.rawMeta || null,
+    });
+
+    await updateGlobalYieldIndex(marketId);
+    await addToTotalBorrowed(marketId, amount);
+    const finalPosition = await addLoanPrincipal(position.id, amount);
+    await setPositionLoanMetadata(position.id, {
+      loanId: loanSet.loanId,
+      loanHash: loanSet.txHash,
+      loanTermMonths: 3,
+      loanMaturityDate: rippleEpochToDate(loanInfo.maturityDate),
+      loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
+    });
+
+    const borrowResult: BorrowResult = {
+      positionId: finalPosition.id,
+      borrowedAmount: amount,
+      newLoanPrincipal: finalPosition.loanPrincipal,
+      txHash: loanSet.txHash,
+    };
+
+    if (idempotencyKey) {
+      await completeIdempotencyEvent(event.id, { result: borrowResult });
+    } else {
+      await updateEventStatus(event.id, 'COMPLETED');
+    }
+
+    await emitAppEvent({
+      eventType: LENDING_EVENTS.BORROW_COMPLETED,
+      module: 'LENDING',
+      status: 'COMPLETED',
+      userAddress,
+      marketId,
+      positionId: position.id,
+      amount,
+      currency: market.debt_currency,
+      payload: { txHash: loanSet.txHash, loanId: loanSet.loanId },
+    });
+
+    return { result: borrowResult };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    await updateEventStatus(event.id, 'FAILED', { code: 'INTERNAL_ERROR', message });
+    return { error: createError('INTERNAL_ERROR', message) };
+  }
+}
+
 function reconstructResult<T>(event: AppEventRow): T | null {
   try {
     const payload = typeof event.payload === 'string'
@@ -294,6 +694,8 @@ function mapMarketRecordToDomain(market: MarketRecord): Market {
     minSupplyAmount: market.min_supply_amount,
     supplyVaultId: market.supply_vault_id,
     supplyMptIssuanceId: market.supply_mpt_issuance_id,
+    loanBrokerId: market.loan_broker_id,
+    loanBrokerAddress: market.loan_broker_address,
     vaultScale: market.vault_scale,
     totalSupplied: market.total_supplied,
     totalBorrowed: market.total_borrowed,
@@ -596,9 +998,21 @@ export async function processBorrow(
   amount: number,
   idempotencyKey?: string
 ): Promise<{ result?: BorrowResult; error?: LendingServiceError }> {
-  const market = await getMarketById(marketId);
-  if (!market) {
+  const marketRow = await getMarketById(marketId);
+  if (!marketRow) {
     return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
+  }
+
+  let market: MarketRecord;
+  try {
+    market = await ensureMarketLoanBrokerConfigured(marketRow);
+  } catch (error) {
+    return {
+      error: createError(
+        'LOAN_BROKER_NOT_CONFIGURED',
+        error instanceof Error ? error.message : 'Loan broker is not configured'
+      ),
+    };
   }
 
   // === IDEMPOTENCY: Atomic acquisition ===
@@ -715,56 +1129,86 @@ export async function processBorrow(
   }
 
   try {
-    // Send debt tokens to user
-    const client = await getClient();
-    const backendWallet = getBackendWallet();
-    const issuerAddress = getIssuerAddress();
-
-    const tx = await sendToken(
-      client,
-      backendWallet,
-      userAddress,
-      market.debt_currency,
-      amount.toString(),
-      issuerAddress
-    );
-
-    if (tx.result !== 'tesSUCCESS') {
-      await updateEventStatus(event.id, 'FAILED', { code: 'TX_FAILED', message: tx.result });
-      return { error: createError('TX_FAILED', `Failed to send tokens: ${tx.result}`) };
+    if (!market.loan_broker_id) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'LOAN_BROKER_NOT_CONFIGURED',
+        message: 'Market loan broker id is not configured',
+      });
+      return {
+        error: createError('LOAN_BROKER_NOT_CONFIGURED', 'Market loan broker id is not configured'),
+      };
     }
+
+    // Submit LoanSet transaction from custodial backend wallet.
+    const client = await getClient();
+    const loanBrokerWallet = getLoanBrokerWallet();
+
+    const loanSetTx = buildLoanSetTransaction({
+      account: loanBrokerWallet.address,
+      borrower: userAddress,
+      loanBrokerId: market.loan_broker_id,
+      principal: {
+        currency: market.debt_currency,
+        issuer: market.debt_issuer,
+        value: amount.toString(),
+      },
+      collateral: {
+        currency: market.collateral_currency,
+        issuer: market.collateral_issuer,
+        value: updatedPosition.collateralAmount.toString(),
+      },
+      termMonths: 3,
+      annualInterestBps: Math.round(market.base_interest_rate * 10000),
+    });
+
+    const loanSetSubmit = await client.submitAndWait(loanSetTx as never, {
+      wallet: loanBrokerWallet,
+    });
+
+    const loanSetHash =
+      typeof loanSetSubmit.result?.hash === 'string' ? loanSetSubmit.result.hash : null;
+    if (!loanSetHash) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'TX_FAILED',
+        message: 'LoanSet transaction hash missing from XRPL response',
+      });
+      return { error: createError('TX_FAILED', 'LoanSet transaction hash missing from XRPL response') };
+    }
+
+    const loanSet = await extractLoanSetResult(client, loanSetHash);
+    const loanInfo = await getLoanInfo(client, loanSet.loanId);
 
     // Record on-chain transaction
     await upsertOnchainTransaction({
-      txHash: tx.hash,
+      txHash: loanSet.txHash,
       validated: true,
-      txType: tx.transactionType ?? 'Payment',
-      sourceAddress: backendWallet.address,
+      txType: 'LoanSet',
+      sourceAddress: loanBrokerWallet.address,
       destinationAddress: userAddress,
       currency: market.debt_currency,
-      issuer: issuerAddress,
+      issuer: market.debt_issuer,
       amount,
-      rawTxJson: buildOutboundRawTxJson({
-        tx,
-        sourceAddress: backendWallet.address,
-        destinationAddress: userAddress,
-        currency: market.debt_currency,
-        issuer: issuerAddress,
-        amount,
-      }),
-      rawMetaJson: tx.rawMeta || null,
+      rawTxJson: loanSet.rawTx,
+      rawMetaJson: loanSet.rawMeta || null,
     });
 
     // Update position
     await updateGlobalYieldIndex(marketId);
     await addToTotalBorrowed(marketId, amount);
     const finalPosition = await addLoanPrincipal(position.id, amount);
+    await setPositionLoanMetadata(position.id, {
+      loanId: loanSet.loanId,
+      loanHash: loanSet.txHash,
+      loanTermMonths: 3,
+      loanMaturityDate: rippleEpochToDate(loanInfo.maturityDate),
+      loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
+    });
 
     const borrowResult: BorrowResult = {
       positionId: finalPosition.id,
       borrowedAmount: amount,
       newLoanPrincipal: finalPosition.loanPrincipal,
-      txHash: tx.hash,
+      txHash: loanSet.txHash,
     };
 
     // Complete idempotency event with result
@@ -784,7 +1228,7 @@ export async function processBorrow(
       positionId: position.id,
       amount,
       currency: market.debt_currency,
-      payload: { txHash: tx.hash },
+      payload: { txHash: loanSet.txHash, loanId: loanSet.loanId },
     });
 
     return { result: borrowResult };

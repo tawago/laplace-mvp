@@ -1,4 +1,4 @@
-import { Client, Wallet } from 'xrpl';
+import { Client, Wallet, decode } from 'xrpl';
 import Decimal from 'decimal.js';
 import { getTokenCode } from '@/lib/xrpl/currency-codes';
 
@@ -24,6 +24,12 @@ const XRPL_FAUCET_URL =
 export interface WalletInfo {
   address: string;
   seed: string;
+}
+
+export function signTransactionJson(seed: string, txJson: Record<string, unknown>): Record<string, unknown> {
+  const wallet = Wallet.fromSeed(seed);
+  const signed = wallet.sign(txJson as never);
+  return decode(signed.tx_blob) as Record<string, unknown>;
 }
 
 export interface TokenBalance {
