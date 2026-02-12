@@ -23,6 +23,8 @@ interface MarketPoolState {
   totalSupplied: number;
   totalBorrowed: number;
   vaultAvailableAssets: number | null;
+  loanBrokerAddress: string | null;
+  loanBrokerId: string | null;
   baseInterestRate: number;
   reserveFactor: number;
   globalYieldIndex: number;
@@ -40,12 +42,96 @@ function parsePoolState(row: typeof markets.$inferSelect): MarketPoolState {
     totalSupplied: parseFloat(row.totalSupplied),
     totalBorrowed: parseFloat(row.totalBorrowed),
     vaultAvailableAssets: null,
+    loanBrokerAddress: row.loanBrokerAddress,
+    loanBrokerId: row.loanBrokerId,
     baseInterestRate: parseFloat(row.baseInterestRate),
     reserveFactor: parseFloat(row.reserveFactor),
     globalYieldIndex: parseFloat(row.globalYieldIndex),
     lastIndexUpdate: row.lastIndexUpdate,
     supplyVaultId: row.supplyVaultId,
   };
+}
+
+function parsePositiveAmount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function extractLoanOutstanding(loanObject: Record<string, unknown>): number {
+  const outstanding =
+    parsePositiveAmount(loanObject.TotalValueOutstanding) ??
+    parsePositiveAmount(loanObject.OutstandingDebt) ??
+    parsePositiveAmount(loanObject.PrincipalOutstanding) ??
+    0;
+
+  return outstanding;
+}
+
+async function hydrateLoanPoolState(state: MarketPoolState): Promise<MarketPoolState> {
+  if (!state.loanBrokerId) {
+    return state;
+  }
+
+  try {
+    const client = await getClient();
+    let brokerAccountAddress = state.loanBrokerAddress;
+
+    // Resolve pseudo-account from LoanBroker ledger entry.
+    // Some historical rows stored the owner account instead of the broker pseudo-account.
+    try {
+      const brokerEntry = (await client.request({
+        command: 'ledger_entry',
+        loan_broker: state.loanBrokerId,
+      } as never)) as { result?: { node?: unknown } };
+
+      const node = (brokerEntry.result as { node?: unknown } | undefined)?.node;
+      if (node && typeof node === 'object' && node !== null) {
+        const accountField = (node as Record<string, unknown>).Account;
+        if (typeof accountField === 'string' && accountField.length > 0) {
+          brokerAccountAddress = accountField;
+        }
+      }
+    } catch {
+      // Fallback to configured address when loan broker lookup fails.
+    }
+
+    if (!brokerAccountAddress) {
+      return state;
+    }
+
+    const accountObjects = await client.request({
+      command: 'account_objects',
+      account: brokerAccountAddress,
+      ledger_index: 'validated',
+    });
+
+    const objects = Array.isArray(accountObjects.result.account_objects)
+      ? (accountObjects.result.account_objects as unknown as Array<Record<string, unknown>>)
+      : [];
+
+    let totalBorrowed = 0;
+    for (const object of objects) {
+      if (object.LedgerEntryType !== 'Loan') continue;
+      if (object.LoanBrokerID !== state.loanBrokerId) continue;
+      totalBorrowed += extractLoanOutstanding(object);
+    }
+
+    return {
+      ...state,
+      totalBorrowed: toAmount(totalBorrowed),
+    };
+  } catch (error) {
+    console.warn(`Failed to load loan state for market ${state.id}:`, error);
+    return state;
+  }
 }
 
 async function hydrateVaultPoolState(state: MarketPoolState): Promise<MarketPoolState> {
@@ -77,8 +163,9 @@ async function getMarketPoolState(marketId: string, database: DbClient = db): Pr
     return null;
   }
 
-  const state = parsePoolState(market);
-  return hydrateVaultPoolState(state);
+  const baseState = parsePoolState(market);
+  const withVaultState = await hydrateVaultPoolState(baseState);
+  return hydrateLoanPoolState(withVaultState);
 }
 
 function buildPoolMetrics(state: MarketPoolState): PoolMetrics {

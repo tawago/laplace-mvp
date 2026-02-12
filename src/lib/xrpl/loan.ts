@@ -168,6 +168,28 @@ function readTxResult(meta: unknown): string {
   return meta.TransactionResult;
 }
 
+function extractLoanIdFromMeta(meta: unknown): string | null {
+  if (!isRecord(meta)) return null;
+  const affectedNodes = meta.AffectedNodes;
+  if (!Array.isArray(affectedNodes)) return null;
+
+  for (const node of affectedNodes) {
+    if (!isRecord(node)) continue;
+    const createdNode = isRecord(node.CreatedNode) ? node.CreatedNode : null;
+    const modifiedNode = isRecord(node.ModifiedNode) ? node.ModifiedNode : null;
+    const deletedNode = isRecord(node.DeletedNode) ? node.DeletedNode : null;
+    const candidate = createdNode || modifiedNode || deletedNode;
+    if (!candidate) continue;
+
+    if (candidate.LedgerEntryType !== 'Loan') continue;
+    if (typeof candidate.LedgerIndex === 'string' && candidate.LedgerIndex.length > 0) {
+      return candidate.LedgerIndex;
+    }
+  }
+
+  return null;
+}
+
 function normalizeIssuedAmount(raw: unknown): IssuedAmountValue | null {
   if (!isRecord(raw)) return null;
   if (
@@ -325,11 +347,18 @@ export async function extractLoanSetResult(client: Client, txHash: string): Prom
     throw new LoanProtocolError('TX_FAILED', `LoanSet failed on-ledger (${txResult})`);
   }
 
+  const loanIdFromResult = readOptionalStringField(result, ['LoanID', 'LoanId', 'loan_id']);
+  const loanIdFromMeta = extractLoanIdFromMeta(rawMeta);
+  const loanId = loanIdFromResult || loanIdFromMeta;
+  if (!loanId) {
+    throw new LoanProtocolError('MISSING_RESULT_FIELD', 'Missing loan id in XRPL response');
+  }
+
   return {
     txHash: typeof result.hash === 'string' ? result.hash : txHash,
     ledgerIndex: typeof result.ledger_index === 'number' ? result.ledger_index : null,
     validated: true,
-    loanId: readStringField(result, ['LoanID', 'LoanId', 'loan_id'], 'loan id'),
+    loanId,
     txResult,
     rawTx,
     rawMeta,
@@ -409,11 +438,21 @@ export async function getLoanInfo(client: Client, loanId: string): Promise<LoanI
     }
 
     return {
-      loanId: readStringField(node, ['LoanID', 'LoanId', 'loan_id'], 'loan id'),
+      loanId: readOptionalStringField(node, ['LoanID', 'LoanId', 'loan_id']) || loanId,
       borrower: readOptionalStringField(node, ['Borrower', 'Account']),
       lender: readOptionalStringField(node, ['Lender']),
-      principal: readOptionalStringField(node, ['Principal', 'principal', 'PrincipalAmount']),
-      outstandingDebt: readOptionalStringField(node, ['OutstandingDebt', 'outstanding_debt', 'Debt']),
+      principal: readOptionalStringField(node, [
+        'Principal',
+        'principal',
+        'PrincipalAmount',
+        'PrincipalOutstanding',
+      ]),
+      outstandingDebt: readOptionalStringField(node, [
+        'OutstandingDebt',
+        'outstanding_debt',
+        'Debt',
+        'TotalValueOutstanding',
+      ]),
       accruedInterest: readOptionalStringField(node, ['AccruedInterest', 'accrued_interest', 'Interest']),
       maturityDate: readOptionalNumberField(node, ['MaturityDate', 'maturity_date', 'Maturity']),
       status: readOptionalStringField(node, ['Status', 'status']),

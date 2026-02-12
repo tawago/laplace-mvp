@@ -25,7 +25,6 @@ import {
   generateConditionFulfillment,
   getWalletFromSeed,
   sendTokenToBackend,
-  signTransactionJson,
   submitCollateralEscrow,
   type TokenBalance,
   type WalletInfo,
@@ -314,42 +313,19 @@ export default function LendingPage() {
     }
 
     await withAction('borrow', async () => {
-      const prepareResponse = await fetch('/api/lending/borrow', {
+      const response = await fetch('/api/lending/borrow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userAddress: wallet.address,
           marketId: selectedMarket.id,
           amount,
+          borrowerSeed: wallet.seed,
         }),
       });
-      const preparePayload = await prepareResponse.json();
-      if (!preparePayload.success) {
-        toast.error(preparePayload.error?.message ?? 'Borrow prepare failed');
-        return;
-      }
-
-      const unsignedTx = preparePayload.data?.unsignedTx;
-      if (!unsignedTx || typeof unsignedTx !== 'object') {
-        toast.error('Borrow prepare response missing unsigned transaction');
-        return;
-      }
-
-      const borrowerSignedTx = signTransactionJson(wallet.seed, unsignedTx as Record<string, unknown>);
-
-      const confirmResponse = await fetch('/api/lending/borrow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userAddress: wallet.address,
-          marketId: selectedMarket.id,
-          amount,
-          signedTxJson: borrowerSignedTx,
-        }),
-      });
-      const confirmPayload = await confirmResponse.json();
-      if (!confirmPayload.success) {
-        toast.error(confirmPayload.error?.message ?? 'Borrow failed');
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error?.message ?? 'Borrow failed');
         return;
       }
 

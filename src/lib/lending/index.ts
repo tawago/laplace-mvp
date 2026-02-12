@@ -88,6 +88,7 @@ export {
   processDeposit,
   prepareBorrow,
   confirmBorrowWithSignedTx,
+  processBorrowWithBorrowerSeed,
   processBorrow,
   processRepay,
   processWithdraw,

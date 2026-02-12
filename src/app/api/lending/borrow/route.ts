@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { confirmBorrowWithSignedTx, prepareBorrow } from '@/lib/lending';
+import { confirmBorrowWithSignedTx, prepareBorrow, processBorrowWithBorrowerSeed } from '@/lib/lending';
 
 /**
  * POST /api/lending/borrow
@@ -15,7 +15,7 @@ import { confirmBorrowWithSignedTx, prepareBorrow } from '@/lib/lending';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userAddress, marketId, amount, idempotencyKey, signedTxJson } = body;
+    const { userAddress, marketId, amount, idempotencyKey, signedTxJson, borrowerSeed } = body;
 
     // Validate required fields
     if (!userAddress) {
@@ -69,7 +69,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = signedTxJson
+    if (borrowerSeed !== undefined && typeof borrowerSeed !== 'string') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'INVALID_BORROWER_SEED', message: 'borrowerSeed must be a string when provided' },
+        },
+        { status: 400 }
+      );
+    }
+
+    const response = borrowerSeed
+      ? await processBorrowWithBorrowerSeed(userAddress, marketId, amount, borrowerSeed, idempotencyKey)
+      : signedTxJson
       ? await confirmBorrowWithSignedTx(
           userAddress,
           marketId,
