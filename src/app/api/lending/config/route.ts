@@ -52,8 +52,10 @@ export async function GET() {
 
     const marketsWithPrices = await Promise.all(
       markets.map(async (market) => {
-        const prices = await getMarketPrices(market.id);
-        const collateralEscrowEnabled = await getIssuerEscrowSupport(market.collateral_issuer);
+        const [prices, collateralEscrowEnabled] = await Promise.all([
+          getMarketPrices(market.id),
+          getIssuerEscrowSupport(market.collateral_issuer),
+        ]);
         return {
           id: market.id,
           name: market.name,

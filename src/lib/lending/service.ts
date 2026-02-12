@@ -2376,32 +2376,38 @@ export async function getPositionWithMetrics(
   userAddress: string,
   marketId: string
 ): Promise<{ position: Position; metrics: PositionMetrics; market: Market; loan: LoanRepaymentOverview | null } | null> {
-  const market = await getMarketById(marketId);
+  const [market, rawPosition] = await Promise.all([
+    getMarketById(marketId),
+    getPositionForUser(userAddress, marketId),
+  ]);
+
   if (!market) {
     return null;
   }
 
-  const rawPosition = await getPositionForUser(userAddress, marketId);
   if (!rawPosition) {
     return null;
   }
 
   const position = rawPosition;
 
-  const prices = await getMarketPrices(marketId);
+  const [prices, pool, resolvedLoanId] = await Promise.all([
+    getMarketPrices(marketId),
+    getPoolMetrics(marketId),
+    findBorrowerActiveLoanIdOnChain(market, userAddress),
+  ]);
+
   if (!prices) {
     return null;
   }
 
   const marketData = mapMarketRecordToDomain(market);
-  const pool = await getPoolMetrics(marketId);
   if (!pool) {
     return null;
   }
 
   let debtAdjustedPosition = position;
   let loanRepaymentOverview: LoanRepaymentOverview | null = null;
-  const resolvedLoanId = await findBorrowerActiveLoanIdOnChain(market, userAddress);
 
   if (resolvedLoanId) {
     try {
