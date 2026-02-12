@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { Client, Wallet } from 'xrpl';
 
+import { cached, xrplCacheKeys } from './cache';
 import { getClient } from './client';
 
 const VAULT_AMENDMENT_HINTS = ['singleassetvault', 'vault'];
@@ -118,39 +119,46 @@ export interface SupplierShareBalance {
 }
 
 export async function checkVaultSupport(client: Client): Promise<VaultSupportResult> {
-  const serverInfo = await client.request({ command: 'server_info' });
-  const info = serverInfo.result?.info as MaybeRecord | undefined;
-  const validatedLedger = isRecord(info?.validated_ledger) ? info?.validated_ledger : undefined;
+  return cached({
+    key: xrplCacheKeys.vaultSupport(),
+    ttlMs: 60_000,
+    tags: ['vault-support'],
+    loader: async () => {
+      const serverInfo = await client.request({ command: 'server_info' });
+      const info = serverInfo.result?.info as MaybeRecord | undefined;
+      const validatedLedger = isRecord(info?.validated_ledger) ? info?.validated_ledger : undefined;
 
-  const amendmentsRaw = validatedLedger?.amendments;
-  const amendments = Array.isArray(amendmentsRaw)
-    ? amendmentsRaw.filter((item): item is string => typeof item === 'string')
-    : [];
+      const amendmentsRaw = validatedLedger?.amendments;
+      const amendments = Array.isArray(amendmentsRaw)
+        ? amendmentsRaw.filter((item): item is string => typeof item === 'string')
+        : [];
 
-  const hasVaultAmendment = amendments.some((amendment) => {
-    const normalized = amendment.toLowerCase();
-    return VAULT_AMENDMENT_HINTS.some((hint) => normalized.includes(hint));
+      const hasVaultAmendment = amendments.some((amendment) => {
+        const normalized = amendment.toLowerCase();
+        return VAULT_AMENDMENT_HINTS.some((hint) => normalized.includes(hint));
+      });
+
+      let hasVaultTxType = false;
+      try {
+        const definitions = await client.request({ command: 'server_definitions' });
+        const transactionTypes = findValueByKey(definitions.result, ['TRANSACTION_TYPES', 'transaction_types']);
+        if (isRecord(transactionTypes)) {
+          hasVaultTxType = Object.keys(transactionTypes).some((key) => key.toLowerCase().includes('vault'));
+        }
+      } catch {
+        hasVaultTxType = false;
+      }
+
+      if (hasVaultAmendment || hasVaultTxType) {
+        return { enabled: true };
+      }
+
+      return {
+        enabled: false,
+        reason: 'Vault amendment or transaction type not detected on connected XRPL network',
+      };
+    },
   });
-
-  let hasVaultTxType = false;
-  try {
-    const definitions = await client.request({ command: 'server_definitions' });
-    const transactionTypes = findValueByKey(definitions.result, ['TRANSACTION_TYPES', 'transaction_types']);
-    if (isRecord(transactionTypes)) {
-      hasVaultTxType = Object.keys(transactionTypes).some((key) => key.toLowerCase().includes('vault'));
-    }
-  } catch {
-    hasVaultTxType = false;
-  }
-
-  if (hasVaultAmendment || hasVaultTxType) {
-    return { enabled: true };
-  }
-
-  return {
-    enabled: false,
-    reason: 'Vault amendment or transaction type not detected on connected XRPL network',
-  };
 }
 
 export async function createSupplyVault(
@@ -213,26 +221,34 @@ export async function withdrawFromSupplyVault(
 }
 
 export async function getSupplyVaultInfo(client: Client, vaultId: string): Promise<SupplyVaultInfo> {
-  const response = (await client.request({
-    command: 'ledger_entry',
-    vault: vaultId,
-  } as never)) as MaybeRecord;
+  return cached({
+    key: xrplCacheKeys.supplyVaultInfo(vaultId),
+    ttlMs: 5_000,
+    staleTtlMs: 10_000,
+    tags: ['vault-info', `vault-info:${vaultId}`],
+    loader: async () => {
+      const response = (await client.request({
+        command: 'ledger_entry',
+        vault: vaultId,
+      } as never)) as MaybeRecord;
 
-  const entry = isRecord(response.result) ? response.result.node : undefined;
-  if (!isRecord(entry)) {
-    throw new Error(`Vault ${vaultId} not found`);
-  }
+      const entry = isRecord(response.result) ? response.result.node : undefined;
+      if (!isRecord(entry)) {
+        throw new Error(`Vault ${vaultId} not found`);
+      }
 
-  return {
-    assetsTotal: toDecimalString(findValueByKey(entry, ['AssetsTotal', 'assets_total']) ?? '0'),
-    assetsAvailable: toDecimalString(findValueByKey(entry, ['AssetsAvailable', 'assets_available']) ?? '0'),
-    exchangeRate: toDecimalString(findValueByKey(entry, ['ExchangeRate', 'exchange_rate']) ?? '1'),
-    mptIssuanceId: extractOptionalStringValue(entry, [
-      'MPTokenIssuanceID',
-      'MPTokenIssuanceId',
-      'mpt_issuance_id',
-    ]),
-  };
+      return {
+        assetsTotal: toDecimalString(findValueByKey(entry, ['AssetsTotal', 'assets_total']) ?? '0'),
+        assetsAvailable: toDecimalString(findValueByKey(entry, ['AssetsAvailable', 'assets_available']) ?? '0'),
+        exchangeRate: toDecimalString(findValueByKey(entry, ['ExchangeRate', 'exchange_rate']) ?? '1'),
+        mptIssuanceId: extractOptionalStringValue(entry, [
+          'MPTokenIssuanceID',
+          'MPTokenIssuanceId',
+          'mpt_issuance_id',
+        ]),
+      };
+    },
+  });
 }
 
 export async function getSupplierShareBalance(

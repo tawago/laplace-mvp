@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processLiquidation } from '@/lib/lending';
+import { invalidateLendingReadCaches } from '@/lib/xrpl/cache';
 
 /**
  * POST /api/lending/liquidate
@@ -39,6 +40,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { results, errors } = await processLiquidation(marketId, userAddress, limit);
+
+    if (results.length > 0) {
+      invalidateLendingReadCaches({ marketId, userAddress });
+    }
 
     return NextResponse.json({
       success: true,

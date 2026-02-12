@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processDeposit } from '@/lib/lending';
+import { invalidateLendingReadCaches } from '@/lib/xrpl/cache';
 
 /**
  * POST /api/lending/deposit
@@ -97,6 +98,8 @@ export async function POST(request: NextRequest) {
       const status = error.code === 'INTERNAL_ERROR' ? 500 : 400;
       return NextResponse.json({ success: false, error }, { status });
     }
+
+    invalidateLendingReadCaches({ marketId, userAddress: senderAddress });
 
     return NextResponse.json({
       success: true,

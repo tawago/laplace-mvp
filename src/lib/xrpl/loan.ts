@@ -1,5 +1,6 @@
 import { Client, Wallet } from 'xrpl';
 
+import { cached, xrplCacheKeys } from './cache';
 import { getClient } from './client';
 
 type MaybeRecord = Record<string, unknown>;
@@ -229,32 +230,39 @@ function normalizeIssuedAmount(raw: unknown): IssuedAmountValue | null {
 }
 
 export async function checkLoanProtocolSupport(client: Client): Promise<LoanProtocolSupport> {
-  const serverInfo = await client.request({ command: 'server_info' });
-  const info = isRecord(serverInfo.result?.info) ? serverInfo.result.info : null;
-  const amendmentsRaw = findValueByKey(info, ['amendments', 'Amendments']);
-  const amendments = Array.isArray(amendmentsRaw)
-    ? amendmentsRaw.filter((item): item is string => typeof item === 'string')
-    : [];
+  return cached({
+    key: xrplCacheKeys.loanSupport(),
+    ttlMs: 60_000,
+    tags: ['loan-support'],
+    loader: async () => {
+      const serverInfo = await client.request({ command: 'server_info' });
+      const info = isRecord(serverInfo.result?.info) ? serverInfo.result.info : null;
+      const amendmentsRaw = findValueByKey(info, ['amendments', 'Amendments']);
+      const amendments = Array.isArray(amendmentsRaw)
+        ? amendmentsRaw.filter((item): item is string => typeof item === 'string')
+        : [];
 
-  const hasLoanAmendment = amendments.some((amendment) => {
-    const normalized = amendment.toLowerCase();
-    return LOAN_AMENDMENT_HINTS.some((hint) => normalized.includes(hint));
+      const hasLoanAmendment = amendments.some((amendment) => {
+        const normalized = amendment.toLowerCase();
+        return LOAN_AMENDMENT_HINTS.some((hint) => normalized.includes(hint));
+      });
+
+      const definitions = await client.request({ command: 'server_definitions' });
+      const txTypeObject = findValueByKey(definitions.result, ['TRANSACTION_TYPES', 'transaction_types']);
+      const txTypes = isRecord(txTypeObject) ? Object.keys(txTypeObject).sort() : [];
+      const hasLoanTx = txTypes.some((txType) => txType.toLowerCase().includes('loan'));
+
+      if (hasLoanAmendment || hasLoanTx) {
+        return { enabled: true, txTypes };
+      }
+
+      return {
+        enabled: false,
+        txTypes,
+        reason: 'Loan amendment or loan transaction types not detected on connected XRPL network',
+      };
+    },
   });
-
-  const definitions = await client.request({ command: 'server_definitions' });
-  const txTypeObject = findValueByKey(definitions.result, ['TRANSACTION_TYPES', 'transaction_types']);
-  const txTypes = isRecord(txTypeObject) ? Object.keys(txTypeObject).sort() : [];
-  const hasLoanTx = txTypes.some((txType) => txType.toLowerCase().includes('loan'));
-
-  if (hasLoanAmendment || hasLoanTx) {
-    return { enabled: true, txTypes };
-  }
-
-  return {
-    enabled: false,
-    txTypes,
-    reason: 'Loan amendment or loan transaction types not detected on connected XRPL network',
-  };
 }
 
 export async function createLoanBroker(
@@ -445,47 +453,55 @@ export async function verifyLoanPayTransaction(client: Client, txHash: string): 
 }
 
 export async function getLoanInfo(client: Client, loanId: string): Promise<LoanInfo> {
-  try {
-    const response = (await client.request({
-      command: 'ledger_entry',
-      loan: loanId,
-    } as never)) as { result?: unknown };
+  return cached({
+    key: xrplCacheKeys.loanInfo(loanId),
+    ttlMs: 5_000,
+    staleTtlMs: 10_000,
+    tags: ['loan-info', `loan-info:${loanId}`],
+    loader: async () => {
+      try {
+        const response = (await client.request({
+          command: 'ledger_entry',
+          loan: loanId,
+        } as never)) as { result?: unknown };
 
-    const node = isRecord((response.result as MaybeRecord | undefined)?.node)
-      ? ((response.result as MaybeRecord).node as MaybeRecord)
-      : null;
-    if (!node) {
-      throw new LoanProtocolError('LEDGER_LOOKUP_FAILED', `Loan ${loanId} not found`);
-    }
+        const node = isRecord((response.result as MaybeRecord | undefined)?.node)
+          ? ((response.result as MaybeRecord).node as MaybeRecord)
+          : null;
+        if (!node) {
+          throw new LoanProtocolError('LEDGER_LOOKUP_FAILED', `Loan ${loanId} not found`);
+        }
 
-    return {
-      loanId: readOptionalStringField(node, ['LoanID', 'LoanId', 'loan_id']) || loanId,
-      borrower: readOptionalStringField(node, ['Borrower', 'Account']),
-      lender: readOptionalStringField(node, ['Lender']),
-      principal: readOptionalAmountValueField(node, [
-        'Principal',
-        'principal',
-        'PrincipalAmount',
-        'PrincipalOutstanding',
-      ]),
-      outstandingDebt: readOptionalAmountValueField(node, [
-        'OutstandingDebt',
-        'outstanding_debt',
-        'Debt',
-        'TotalValueOutstanding',
-      ]),
-      accruedInterest: readOptionalAmountValueField(node, ['AccruedInterest', 'accrued_interest', 'Interest']),
-      maturityDate: readOptionalNumberField(node, ['MaturityDate', 'maturity_date', 'Maturity']),
-      status: readOptionalStringField(node, ['Status', 'status']),
-      raw: node,
-    };
-  } catch (error) {
-    if (error instanceof LoanProtocolError) {
-      throw error;
-    }
+        return {
+          loanId: readOptionalStringField(node, ['LoanID', 'LoanId', 'loan_id']) || loanId,
+          borrower: readOptionalStringField(node, ['Borrower', 'Account']),
+          lender: readOptionalStringField(node, ['Lender']),
+          principal: readOptionalAmountValueField(node, [
+            'Principal',
+            'principal',
+            'PrincipalAmount',
+            'PrincipalOutstanding',
+          ]),
+          outstandingDebt: readOptionalAmountValueField(node, [
+            'OutstandingDebt',
+            'outstanding_debt',
+            'Debt',
+            'TotalValueOutstanding',
+          ]),
+          accruedInterest: readOptionalAmountValueField(node, ['AccruedInterest', 'accrued_interest', 'Interest']),
+          maturityDate: readOptionalNumberField(node, ['MaturityDate', 'maturity_date', 'Maturity']),
+          status: readOptionalStringField(node, ['Status', 'status']),
+          raw: node,
+        };
+      } catch (error) {
+        if (error instanceof LoanProtocolError) {
+          throw error;
+        }
 
-    throw new LoanProtocolError('LEDGER_LOOKUP_FAILED', `Failed to fetch loan ${loanId}`);
-  }
+        throw new LoanProtocolError('LEDGER_LOOKUP_FAILED', `Failed to fetch loan ${loanId}`);
+      }
+    },
+  });
 }
 
 export async function markLoanDefaulted(wallet: Wallet, loanId: string): Promise<{ txHash: string }> {

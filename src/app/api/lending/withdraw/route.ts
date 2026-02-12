@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processWithdraw } from '@/lib/lending';
+import { invalidateLendingReadCaches } from '@/lib/xrpl/cache';
 
 /**
  * POST /api/lending/withdraw
@@ -67,6 +68,8 @@ export async function POST(request: NextRequest) {
       if (error.code === 'OPERATION_IN_PROGRESS') status = 409;
       return NextResponse.json({ success: false, error }, { status });
     }
+
+    invalidateLendingReadCaches({ marketId, userAddress });
 
     return NextResponse.json({
       success: true,
