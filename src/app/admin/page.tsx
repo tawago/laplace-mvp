@@ -195,7 +195,7 @@ export default function AdminPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Admin Wallet Tools</h1>
           <p className="mt-2 text-sm text-slate-600">
-            This page is for local XRPL setup (testnet/devnet). Wallet seed is persisted in localStorage.
+            This page is for local XRPL setup (devnet). Wallet seed is persisted in localStorage.
           </p>
         </div>
 
@@ -253,7 +253,7 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-slate-600">
-                  Creates trust line and sends {token === 'RLUSD' ? '10' : '100'} {token}.
+                  Creates trust line and sends {token === 'RLUSD' ? '1000' : '100'} {token}.
                 </p>
                 <Button
                   onClick={() => handleTokenFaucet(token)}

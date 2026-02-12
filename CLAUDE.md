@@ -18,7 +18,7 @@ pnpm start
 pnpm lint
 
 # XRPL + DB setup
-pnpm setup:testnet
+pnpm setup:xrpl
 pnpm setup:db
 pnpm setup:all
 
@@ -33,7 +33,7 @@ pnpm db:studio
 This project is now a hybrid app that combines:
 
 1. The original **Sheng Tai International** hotel tokenization mock UI.
-2. An **XRPL testnet lending PoC** for JFIIP application
+2. An **XRPL devnet lending PoC** for JFIIP application
 
 It includes a real backend/service layer for lending flows (via Next.js API routes), plus Neon Postgres state management through Drizzle.
 
@@ -45,7 +45,7 @@ It includes a real backend/service layer for lending flows (via Next.js API rout
 - **Tailwind CSS v4** with CSS variables
 - **shadcn/ui** components (new-york style)
 - **Lucide React** for icons
-- **XRPL testnet** integration (`xrpl` package)
+- **XRPL devnet** integration (`xrpl` package)
 - **Neon Postgres + Drizzle ORM** for persistence
 
 ### Key Routes
@@ -78,7 +78,7 @@ It includes a real backend/service layer for lending flows (via Next.js API rout
 
 ### Important Notes
 - Do not remove legacy hotel pages/components unless explicitly requested; they are still used.
-- Lending flows execute real XRPL testnet transactions and depend on env configuration.
+- Lending flows execute real XRPL devnet transactions and depend on env configuration.
 - `pnpm dev` runs with HTTPS on port `3001`.
 - `.env.local` is required for wallet seeds/addresses and `DATABASE_URL`.
 - Keep changes compatible with the current hybrid state (mock UI + functional lending backend).

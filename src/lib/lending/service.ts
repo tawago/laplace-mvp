@@ -31,17 +31,13 @@ import {
   acquireIdempotencyKey,
   validateIdempotencyIdentity,
   completeIdempotencyEvent,
-  getEventsForPosition,
   type AppEventRow,
 } from './events';
 import {
   getOrCreatePosition,
   getPositionForUser,
-  accrueInterest,
   addCollateral,
   removeCollateral,
-  addLoanPrincipal,
-  applyRepayment,
   liquidatePosition as markLiquidated,
   calculatePositionMetrics,
   getLiquidatablePositions,
@@ -49,10 +45,10 @@ import {
   setPositionEscrowMetadata,
   clearPositionEscrowMetadata,
   setPositionLoanMetadata,
+  clearPositionLoanMetadata,
 } from './positions';
 import {
   validateBorrow,
-  allocateRepayment,
   calculateLiquidationCollateral,
   calculateTotalDebt,
 } from './calculations';
@@ -97,7 +93,9 @@ import {
   checkLoanProtocolSupport,
   createLoanBroker,
   buildLoanSetTransaction,
+  buildLoanPayTransaction,
   extractLoanSetResult,
+  verifyLoanPayTransaction,
   getLoanInfo,
   LoanProtocolError,
   type LoanSetResult,
@@ -263,13 +261,103 @@ function parsePositiveNumber(value: string | null): number | null {
   return parsed;
 }
 
-function parseEventPayload(payload: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(payload);
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
+function findLoanFieldValue(input: unknown, keys: string[]): unknown {
+  if (!input || typeof input !== 'object') {
+    return undefined;
   }
+
+  const record = input as Record<string, unknown>;
+  for (const key of keys) {
+    if (key in record) {
+      return record[key];
+    }
+  }
+
+  for (const value of Object.values(record)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const nested = findLoanFieldValue(item, keys);
+        if (nested !== undefined) return nested;
+      }
+      continue;
+    }
+
+    const nested = findLoanFieldValue(value, keys);
+    if (nested !== undefined) return nested;
+  }
+
+  return undefined;
+}
+
+function readLoanNumericField(raw: Record<string, unknown>, keys: string[]): number | null {
+  const value = findLoanFieldValue(raw, keys);
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  if (value && typeof value === 'object') {
+    const maybeAmountValue = (value as Record<string, unknown>).value;
+    if (typeof maybeAmountValue === 'number' && Number.isFinite(maybeAmountValue)) {
+      return maybeAmountValue;
+    }
+    if (typeof maybeAmountValue === 'string' && maybeAmountValue.trim().length > 0) {
+      const parsed = Number(maybeAmountValue);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getLoanMinimumRepayment(loanInfo: { outstandingDebt: string | null; raw: Record<string, unknown> }): number | null {
+  const periodicPayment = readLoanNumericField(loanInfo.raw, [
+    'PeriodicPayment',
+    'periodicPayment',
+    'periodic_payment',
+  ]);
+  const totalOutstanding = parsePositiveNumber(loanInfo.outstandingDebt);
+
+  if (periodicPayment !== null && totalOutstanding !== null) {
+    return Math.max(0, Math.min(periodicPayment, totalOutstanding));
+  }
+
+  if (periodicPayment !== null) {
+    return Math.max(0, periodicPayment);
+  }
+
+  if (totalOutstanding !== null) {
+    return Math.max(0, totalOutstanding);
+  }
+
+  return null;
+}
+
+type RepayKind = 'regular' | 'full' | 'overpayment' | 'late';
+
+interface LoanRepaymentOverview {
+  loanId: string;
+  minimumRepayment: number | null;
+  fullRepayment: number | null;
+  suggestedOverpayment: number | null;
+  periodicPayment: number | null;
+  paymentRemaining: number | null;
+  nextPaymentDueDate: string | null;
+  nextPaymentDueRippleEpoch: number | null;
+  isPastDue: boolean;
+}
+
+function getRepayFlags(repayKind: RepayKind): number {
+  if (repayKind === 'overpayment') return 0x00010000;
+  if (repayKind === 'full') return 0x00020000;
+  if (repayKind === 'late') return 0x00040000;
+  return 0;
 }
 
 async function getBorrowerOutstandingDebtOnChain(
@@ -282,34 +370,22 @@ async function getBorrowerOutstandingDebtOnChain(
 
   try {
     const client = await getClient();
-    let brokerAccountAddress: string | null = market.loan_broker_address;
+    const objects: Array<Record<string, unknown>> = [];
+    let marker: unknown = undefined;
+    do {
+      const accountObjects = await client.request({
+        command: 'account_objects',
+        account: borrowerAddress,
+        ledger_index: 'validated',
+        marker,
+      });
 
-    const brokerEntry = (await client.request({
-      command: 'ledger_entry',
-      loan_broker: market.loan_broker_id,
-    } as never)) as { result?: { node?: unknown } };
-
-    const node = brokerEntry.result?.node;
-    if (node && typeof node === 'object' && node !== null) {
-      const accountField = (node as Record<string, unknown>).Account;
-      if (typeof accountField === 'string' && accountField.length > 0) {
-        brokerAccountAddress = accountField;
-      }
-    }
-
-    if (!brokerAccountAddress) {
-      return null;
-    }
-
-    const accountObjects = await client.request({
-      command: 'account_objects',
-      account: brokerAccountAddress,
-      ledger_index: 'validated',
-    });
-
-    const objects = Array.isArray(accountObjects.result.account_objects)
-      ? (accountObjects.result.account_objects as unknown as Array<Record<string, unknown>>)
-      : [];
+      const page = Array.isArray(accountObjects.result.account_objects)
+        ? (accountObjects.result.account_objects as unknown as Array<Record<string, unknown>>)
+        : [];
+      objects.push(...page);
+      marker = accountObjects.result.marker;
+    } while (marker !== undefined);
 
     let totalDebt = 0;
     for (const object of objects) {
@@ -318,9 +394,7 @@ async function getBorrowerOutstandingDebtOnChain(
       if (object.Borrower !== borrowerAddress) continue;
 
       const value =
-        parsePositiveNumber(typeof object.TotalValueOutstanding === 'string' ? object.TotalValueOutstanding : null) ??
-        parsePositiveNumber(typeof object.OutstandingDebt === 'string' ? object.OutstandingDebt : null) ??
-        parsePositiveNumber(typeof object.PrincipalOutstanding === 'string' ? object.PrincipalOutstanding : null) ??
+        readLoanNumericField(object, ['TotalValueOutstanding', 'OutstandingDebt', 'PrincipalOutstanding']) ??
         0;
       totalDebt += value;
     }
@@ -331,58 +405,73 @@ async function getBorrowerOutstandingDebtOnChain(
   }
 }
 
-async function recoverPositionLoanMetadata(position: Position, userAddress: string, marketId: string): Promise<Position> {
-  if (position.loanId) {
-    return position;
-  }
-
-  const events = await getEventsForPosition(position.id, 20);
-  const completedBorrow = events.find((event) => event.event_type === LENDING_EVENTS.BORROW_COMPLETED && event.status === 'COMPLETED');
-  if (!completedBorrow) {
-    return position;
-  }
-
-  const payload = parseEventPayload(completedBorrow.payload);
-  const payloadLoanId = typeof payload?.loanId === 'string' ? payload.loanId : null;
-  const payloadTxHash = typeof payload?.txHash === 'string' ? payload.txHash : null;
-
-  if (!payloadLoanId && !payloadTxHash) {
-    return position;
+async function findBorrowerActiveLoanIdOnChain(
+  market: MarketRecord,
+  borrowerAddress: string
+): Promise<string | null> {
+  if (!market.loan_broker_id) {
+    return null;
   }
 
   try {
     const client = await getClient();
-    const loanSet = payloadTxHash ? await extractLoanSetResult(client, payloadTxHash) : null;
-    const recoveredLoanId = payloadLoanId || loanSet?.loanId;
-    if (!recoveredLoanId) {
-      return position;
+    const objects: Array<Record<string, unknown>> = [];
+    let marker: unknown = undefined;
+    do {
+      const accountObjects = await client.request({
+        command: 'account_objects',
+        account: borrowerAddress,
+        ledger_index: 'validated',
+        marker,
+      });
+
+      const page = Array.isArray(accountObjects.result.account_objects)
+        ? (accountObjects.result.account_objects as unknown as Array<Record<string, unknown>>)
+        : [];
+      objects.push(...page);
+      marker = accountObjects.result.marker;
+    } while (marker !== undefined);
+
+    let bestLoanId: string | null = null;
+    let bestOutstandingDebt = -1;
+
+    for (const object of objects) {
+      if (object.LedgerEntryType !== 'Loan') continue;
+      if (object.LoanBrokerID !== market.loan_broker_id) continue;
+      if (object.Borrower !== borrowerAddress) continue;
+
+      const loanId =
+        typeof object.index === 'string'
+          ? object.index
+          : typeof object.LedgerIndex === 'string'
+          ? object.LedgerIndex
+          : null;
+      if (!loanId) continue;
+
+      const outstandingDebt =
+        readLoanNumericField(object, ['TotalValueOutstanding', 'OutstandingDebt', 'PrincipalOutstanding']) ??
+        0;
+
+      if (outstandingDebt <= 0) {
+        continue;
+      }
+
+      if (outstandingDebt > bestOutstandingDebt) {
+        bestOutstandingDebt = outstandingDebt;
+        bestLoanId = loanId;
+      }
     }
 
-    const loanInfo = await getLoanInfo(client, recoveredLoanId);
-    const recoveredHash = payloadTxHash || loanSet?.txHash;
-    if (!recoveredHash) {
-      return position;
-    }
-
-    await setPositionLoanMetadata(position.id, {
-      loanId: recoveredLoanId,
-      loanHash: recoveredHash,
-      loanTermMonths: position.loanTermMonths || 3,
-      loanMaturityDate: rippleEpochToDate(loanInfo.maturityDate),
-      loanOpenedAtLedgerIndex: loanSet?.ledgerIndex ?? null,
-    });
-
-    const refreshed = await getPositionForUser(userAddress, marketId);
-    return refreshed || position;
+    return bestLoanId;
   } catch {
-    return position;
+    return null;
   }
 }
 
 interface BorrowContext {
   market: MarketRecord;
   position: Position;
-  updatedPosition: Position;
+  currentDebt: number;
 }
 
 async function loadBorrowContext(
@@ -423,13 +512,13 @@ async function loadBorrowContext(
     return { error: createError('NO_POSITION', 'No active position found. Deposit collateral first.') };
   }
 
-  const updatedPosition = await accrueInterest(position);
-  const totalDebt = calculateTotalDebt(updatedPosition.loanPrincipal, updatedPosition.interestAccrued);
+  const totalDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
+  const currentDebt = Math.max(0, totalDebt ?? 0);
 
   const canBorrow = validateBorrow(
-    updatedPosition.collateralAmount,
+    position.collateralAmount,
     prices.collateralPriceUsd,
-    totalDebt,
+    currentDebt,
     amount,
     prices.debtPriceUsd,
     market.max_ltv_ratio
@@ -455,7 +544,7 @@ async function loadBorrowContext(
     context: {
       market,
       position,
-      updatedPosition,
+      currentDebt,
     },
   };
 }
@@ -546,13 +635,13 @@ export async function prepareBorrow(
     principal: {
       currency: market.debt_currency,
       issuer: market.debt_issuer,
-      value: amount.toString(),
-    },
-    collateral: {
-      currency: market.collateral_currency,
-      issuer: market.collateral_issuer,
-      value: loaded.context.updatedPosition.collateralAmount.toString(),
-    },
+        value: amount.toString(),
+      },
+      collateral: {
+        currency: market.collateral_currency,
+        issuer: market.collateral_issuer,
+        value: loaded.context.position.collateralAmount.toString(),
+      },
     termMonths: 3,
     annualInterestBps: Math.round(market.base_interest_rate * 10000),
     additionalFields: {
@@ -699,7 +788,6 @@ export async function confirmBorrowWithSignedTx(
 
     await updateGlobalYieldIndex(marketId);
     await addToTotalBorrowed(marketId, amount);
-    const finalPosition = await addLoanPrincipal(position.id, amount);
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
@@ -708,10 +796,11 @@ export async function confirmBorrowWithSignedTx(
       loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
     });
 
+    const onChainPrincipal = parsePositiveNumber(loanInfo.principal) ?? parsePositiveNumber(loanInfo.outstandingDebt) ?? amount;
     const borrowResult: BorrowResult = {
-      positionId: finalPosition.id,
+      positionId: position.id,
       borrowedAmount: amount,
-      newLoanPrincipal: finalPosition.loanPrincipal,
+      newLoanPrincipal: onChainPrincipal,
       txHash: loanSet.txHash,
     };
 
@@ -753,7 +842,7 @@ export async function processBorrowWithBorrowerSeed(
     return { error: loaded.error || createError('INTERNAL_ERROR', 'Failed to load borrow context') };
   }
 
-  const { market, position, updatedPosition } = loaded.context;
+  const { market, position } = loaded.context;
   const loanBrokerWallet = getLoanBrokerWallet();
 
   if (!market.loan_broker_id) {
@@ -830,7 +919,7 @@ export async function processBorrowWithBorrowerSeed(
       collateral: {
         currency: market.collateral_currency,
         issuer: market.collateral_issuer,
-        value: updatedPosition.collateralAmount.toString(),
+        value: position.collateralAmount.toString(),
       },
       termMonths: 3,
       annualInterestBps: Math.round(market.base_interest_rate * 10000),
@@ -893,7 +982,6 @@ export async function processBorrowWithBorrowerSeed(
 
     await updateGlobalYieldIndex(marketId);
     await addToTotalBorrowed(marketId, amount);
-    const finalPosition = await addLoanPrincipal(position.id, amount);
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
@@ -902,10 +990,11 @@ export async function processBorrowWithBorrowerSeed(
       loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
     });
 
+    const onChainPrincipal = parsePositiveNumber(loanInfo.principal) ?? parsePositiveNumber(loanInfo.outstandingDebt) ?? amount;
     const borrowResult: BorrowResult = {
-      positionId: finalPosition.id,
+      positionId: position.id,
       borrowedAmount: amount,
-      newLoanPrincipal: finalPosition.loanPrincipal,
+      newLoanPrincipal: onChainPrincipal,
       txHash: loanSet.txHash,
     };
 
@@ -1415,15 +1504,14 @@ export async function processBorrow(
     return { error: createError('NO_POSITION', 'No active position found. Deposit collateral first.') };
   }
 
-  // Accrue interest
-  const updatedPosition = await accrueInterest(position);
-  const totalDebt = calculateTotalDebt(updatedPosition.loanPrincipal, updatedPosition.interestAccrued);
+  const totalDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
+  const currentDebt = Math.max(0, totalDebt ?? 0);
 
   // Validate LTV
   const canBorrow = validateBorrow(
-    updatedPosition.collateralAmount,
+    position.collateralAmount,
     prices.collateralPriceUsd,
-    totalDebt,
+    currentDebt,
     amount,
     prices.debtPriceUsd,
     market.max_ltv_ratio
@@ -1475,7 +1563,7 @@ export async function processBorrow(
       collateral: {
         currency: market.collateral_currency,
         issuer: market.collateral_issuer,
-        value: updatedPosition.collateralAmount.toString(),
+        value: position.collateralAmount.toString(),
       },
       termMonths: 3,
       annualInterestBps: Math.round(market.base_interest_rate * 10000),
@@ -1515,7 +1603,6 @@ export async function processBorrow(
     // Update position
     await updateGlobalYieldIndex(marketId);
     await addToTotalBorrowed(marketId, amount);
-    const finalPosition = await addLoanPrincipal(position.id, amount);
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
@@ -1524,10 +1611,11 @@ export async function processBorrow(
       loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
     });
 
+    const onChainPrincipal = parsePositiveNumber(loanInfo.principal) ?? parsePositiveNumber(loanInfo.outstandingDebt) ?? amount;
     const borrowResult: BorrowResult = {
-      positionId: finalPosition.id,
+      positionId: position.id,
       borrowedAmount: amount,
-      newLoanPrincipal: finalPosition.loanPrincipal,
+      newLoanPrincipal: onChainPrincipal,
       txHash: loanSet.txHash,
     };
 
@@ -1563,14 +1651,15 @@ export async function processBorrow(
  * Verify and process a repayment transaction
  */
 export async function processRepay(
-  txHash: string,
-  senderAddress: string,
+  userAddress: string,
   marketId: string,
+  amount: number,
+  borrowerSeed: string,
+  repayKind: RepayKind = 'regular',
   idempotencyKey?: string
 ): Promise<{ result?: RepayResult; error?: LendingServiceError }> {
-  // Check for replay
-  if (await isTransactionProcessed(txHash)) {
-    return { error: createError('TX_ALREADY_PROCESSED', 'This transaction has already been processed') };
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: createError('INVALID_AMOUNT', 'Repayment amount must be greater than 0') };
   }
 
   const market = await getMarketById(marketId);
@@ -1583,53 +1672,197 @@ export async function processRepay(
     eventType: LENDING_EVENTS.REPAY_INITIATED,
     module: 'LENDING',
     status: 'PENDING',
-    userAddress: senderAddress,
+    userAddress,
     marketId,
     idempotencyKey,
-    payload: { txHash },
+    amount,
+    currency: market.debt_currency,
+    payload: {},
   });
 
   try {
-    const client = await getClient();
-    const tx = await verifyTransaction(client, txHash);
-
-    if (!tx.validated) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'TX_NOT_VALIDATED', message: 'Not validated' });
-      return { error: createError('TX_NOT_VALIDATED', 'Transaction not yet validated') };
+    let borrowerWallet: Wallet;
+    try {
+      borrowerWallet = Wallet.fromSeed(borrowerSeed);
+    } catch {
+      await updateEventStatus(event.id, 'FAILED', { code: 'INVALID_BORROWER_SEED', message: 'Invalid borrower seed' });
+      return { error: createError('INVALID_BORROWER_SEED', 'Borrower seed is invalid') };
     }
 
-    const backendAddress = getBackendAddress();
-    if (tx.destination !== backendAddress) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'WRONG_DESTINATION', message: 'Wrong destination' });
-      return { error: createError('WRONG_DESTINATION', `Transaction must be sent to ${backendAddress}`) };
-    }
-
-    if (tx.transactionType !== 'Payment') {
+    if (borrowerWallet.address !== userAddress) {
       await updateEventStatus(event.id, 'FAILED', {
-        code: 'NOT_PAYMENT',
-        message: 'Transaction must be a Payment',
+        code: 'BORROWER_SEED_MISMATCH',
+        message: 'Borrower seed does not match userAddress',
+      });
+      return { error: createError('BORROWER_SEED_MISMATCH', 'Borrower seed does not match userAddress') };
+    }
+
+    const rawPosition = await getPositionForUser(userAddress, marketId);
+    if (!rawPosition) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'NO_POSITION', message: 'No position' });
+      return { error: createError('NO_POSITION', 'No active position found') };
+    }
+
+    const position = rawPosition;
+    const loanId = await findBorrowerActiveLoanIdOnChain(market, userAddress);
+    if (!loanId) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'LOAN_NOT_FOUND',
+        message: 'No on-chain loan metadata found for this position',
       });
       return {
-        error: createError('NOT_PAYMENT', `Expected Payment, got ${tx.transactionType}`),
+        error: createError('LOAN_NOT_FOUND', 'No on-chain loan metadata found for this position'),
       };
     }
 
-    if (!tx.amount) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'NO_AMOUNT', message: 'No amount' });
-      return { error: createError('NO_AMOUNT', 'Could not determine transaction amount') };
+    const client = await getClient();
+    const loanInfoBeforePay = await getLoanInfo(client, loanId);
+    const debtBeforePay = parsePositiveNumber(loanInfoBeforePay.outstandingDebt) ?? 0;
+    if (debtBeforePay <= 0) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'NO_DEBT',
+        message: 'No outstanding debt to repay',
+      });
+      return {
+        error: createError('NO_DEBT', 'No outstanding debt to repay'),
+      };
     }
 
-    if (!isExpectedCurrency(tx.amount.currency, market.debt_currency)) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'WRONG_CURRENCY', message: 'Wrong currency' });
+    const fullRepayment = parsePositiveNumber(loanInfoBeforePay.outstandingDebt);
+    const requestedAmount =
+      repayKind === 'full' && fullRepayment !== null ? Math.min(amount, fullRepayment) : amount;
+    const minimumRepayment = getLoanMinimumRepayment(loanInfoBeforePay);
+    if (minimumRepayment !== null && requestedAmount + 1e-12 < minimumRepayment) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'INSUFFICIENT_PAYMENT',
+        message: `Repayment is below required minimum (${minimumRepayment} ${market.debt_currency})`,
+      });
       return {
         error: createError(
-          'WRONG_CURRENCY',
-          `Expected ${market.debt_currency}, got ${tx.amount.currency}`
+          'INSUFFICIENT_PAYMENT',
+          `Repayment is below required minimum. Minimum due is ${minimumRepayment.toFixed(6)} ${market.debt_currency}`
         ),
       };
     }
 
-    if (tx.amount.currency !== 'XRP' && tx.amount.issuer !== market.debt_issuer) {
+    const loanPayTx = buildLoanPayTransaction({
+      account: userAddress,
+      loanId,
+      amount: {
+        currency: market.debt_currency,
+        issuer: market.debt_issuer,
+        value: requestedAmount.toString(),
+      },
+      additionalFields: getRepayFlags(repayKind) > 0 ? { Flags: getRepayFlags(repayKind) } : undefined,
+    });
+
+    const submit = await client.submitAndWait(loanPayTx as never, {
+      wallet: borrowerWallet,
+    });
+
+    const submitResult = submit.result as unknown as Record<string, unknown>;
+    const submitMeta =
+      typeof submitResult.meta === 'object' && submitResult.meta !== null
+        ? (submitResult.meta as Record<string, unknown>)
+        : null;
+    const submitTxResult = extractTransactionResult(submitMeta);
+    if (submitTxResult !== 'tesSUCCESS') {
+      if (submitTxResult === 'tecKILLED') {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'LOAN_ALREADY_PAID',
+          message: 'Loan is already fully repaid on-chain',
+        });
+        return {
+          error: createError('LOAN_ALREADY_PAID', 'Loan is already fully repaid on-chain'),
+        };
+      }
+
+      if (submitTxResult === 'tecINSUFFICIENT_PAYMENT') {
+        const refreshedLoanInfo = await getLoanInfo(client, loanId);
+        const refreshedMinimumRepayment = getLoanMinimumRepayment(refreshedLoanInfo);
+        const minimumText =
+          refreshedMinimumRepayment !== null
+            ? ` Minimum due is ${refreshedMinimumRepayment.toFixed(6)} ${market.debt_currency}.`
+            : '';
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'INSUFFICIENT_PAYMENT',
+          message: `LoanPay amount below required minimum.${minimumText}`,
+        });
+        return {
+          error: createError(
+            'INSUFFICIENT_PAYMENT',
+            `LoanPay amount is below required minimum.${minimumText}`.trim()
+          ),
+        };
+      }
+
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'TX_FAILED',
+        message: `LoanPay failed on-ledger (${submitTxResult ?? 'unknown'})`,
+      });
+      return {
+        error: createError('TX_FAILED', `LoanPay failed on-ledger (${submitTxResult ?? 'unknown'})`),
+      };
+    }
+
+    const txHash = typeof submitResult.hash === 'string' ? submitResult.hash : null;
+    if (!txHash) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'TX_FAILED',
+        message: 'LoanPay transaction hash missing from XRPL response',
+      });
+      return { error: createError('TX_FAILED', 'LoanPay transaction hash missing from XRPL response') };
+    }
+
+    if (await isTransactionProcessed(txHash)) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'TX_ALREADY_PROCESSED',
+        message: 'This transaction has already been processed',
+      });
+      return { error: createError('TX_ALREADY_PROCESSED', 'This transaction has already been processed') };
+    }
+
+    const verified = await verifyLoanPayTransaction(client, txHash);
+    if (verified.account !== userAddress) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'SENDER_MISMATCH',
+        message: 'Transaction sender does not match',
+      });
+      return { error: createError('SENDER_MISMATCH', 'Transaction sender does not match') };
+    }
+
+    if (verified.loanId !== loanId) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_LOAN_ID',
+        message: 'LoanPay LoanID does not match active position loan',
+      });
+      return {
+        error: createError('WRONG_LOAN_ID', 'LoanPay LoanID does not match active position loan'),
+      };
+    }
+
+    if (!verified.amount) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'NO_AMOUNT',
+        message: 'Could not determine LoanPay amount',
+      });
+      return { error: createError('NO_AMOUNT', 'Could not determine LoanPay amount') };
+    }
+
+    if (!isExpectedCurrency(verified.amount.currency, market.debt_currency)) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_CURRENCY',
+        message: `Expected ${market.debt_currency}`,
+      });
+      return {
+        error: createError(
+          'WRONG_CURRENCY',
+          `Expected ${market.debt_currency}, got ${verified.amount.currency}`
+        ),
+      };
+    }
+
+    if (verified.amount.currency !== 'XRP' && verified.amount.issuer !== market.debt_issuer) {
       await updateEventStatus(event.id, 'FAILED', {
         code: 'WRONG_ISSUER',
         message: `Expected issuer ${market.debt_issuer}`,
@@ -1637,141 +1870,96 @@ export async function processRepay(
       return {
         error: createError(
           'WRONG_ISSUER',
-          `Expected issuer ${market.debt_issuer}, got ${tx.amount.issuer}`
+          `Expected issuer ${market.debt_issuer}, got ${verified.amount.issuer}`
         ),
       };
     }
 
-    if (tx.source !== senderAddress) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'SENDER_MISMATCH', message: 'Sender mismatch' });
-      return { error: createError('SENDER_MISMATCH', 'Transaction sender does not match') };
+    const paidAmount = parseNumericLike(verified.amount.value);
+    if (paidAmount === null || paidAmount <= 0) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'NO_AMOUNT',
+        message: 'Invalid LoanPay amount in transaction',
+      });
+      return { error: createError('NO_AMOUNT', 'Invalid LoanPay amount in transaction') };
     }
 
-    // Get position
-    const position = await getPositionForUser(senderAddress, marketId);
-    if (!position) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'NO_POSITION', message: 'No position' });
-      return { error: createError('NO_POSITION', 'No active position found') };
+    let debtAfterPay = 0;
+    let principalAfterPay = 0;
+    let interestAfterPay = 0;
+    try {
+      const loanInfoAfterPay = await getLoanInfo(client, loanId);
+      debtAfterPay = parsePositiveNumber(loanInfoAfterPay.outstandingDebt) ?? 0;
+      principalAfterPay = parsePositiveNumber(loanInfoAfterPay.principal) ?? debtAfterPay;
+      interestAfterPay = parsePositiveNumber(loanInfoAfterPay.accruedInterest) ?? Math.max(0, debtAfterPay - principalAfterPay);
+    } catch {
+      debtAfterPay = 0;
+      principalAfterPay = 0;
+      interestAfterPay = 0;
     }
 
-    // Accrue interest first
-    const updatedPosition = await accrueInterest(position);
-
-    const amount = parseFloat(tx.amount.value);
-    const { interestPaid, principalPaid, excess } = allocateRepayment(
-      amount,
-      updatedPosition.interestAccrued,
-      updatedPosition.loanPrincipal
-    );
+    const principalBeforePay = parsePositiveNumber(loanInfoBeforePay.principal) ?? debtBeforePay;
+    const interestBeforePay = parsePositiveNumber(loanInfoBeforePay.accruedInterest) ?? Math.max(0, debtBeforePay - principalBeforePay);
+    const principalPaid = Math.max(0, principalBeforePay - principalAfterPay);
+    const interestPaid = Math.max(0, interestBeforePay - interestAfterPay);
+    const debtDelta = Math.max(0, debtBeforePay - debtAfterPay);
+    const excess = Math.max(0, paidAmount - debtDelta);
 
     // Record on-chain transaction
     const onchainTx = await upsertOnchainTransaction({
       txHash,
-      validated: tx.validated,
-      txType: tx.transactionType,
-      sourceAddress: tx.source,
-      destinationAddress: tx.destination,
-      currency: tx.amount.currency,
-      issuer: tx.amount.issuer,
-      amount,
-      rawTxJson: buildInboundRawTxJson(tx),
-      rawMetaJson: tx.rawMeta || null,
+      validated: true,
+      txType: 'LoanPay',
+      sourceAddress: userAddress,
+      destinationAddress: market.loan_broker_address || market.debt_issuer,
+      currency: verified.amount.currency,
+      issuer: verified.amount.issuer,
+      amount: paidAmount,
+      rawTxJson: verified.rawTx,
+      rawMetaJson: verified.rawMeta || null,
     });
 
-    // Apply repayment
-    await updateGlobalYieldIndex(marketId);
-    if (principalPaid > 0) {
-      await removeFromTotalBorrowed(marketId, principalPaid);
-    }
-    const finalPosition = await applyRepayment(position.id, interestPaid, principalPaid);
-    const remainingDebt = calculateTotalDebt(finalPosition.loanPrincipal, finalPosition.interestAccrued);
-    let collateralReleasedTxHash: string | undefined;
-
-    if (remainingDebt <= 0 && finalPosition.collateralAmount > 0) {
-      if (
-        !finalPosition.escrowOwner ||
-        finalPosition.escrowSequence === null ||
-        !finalPosition.escrowFulfillment ||
-        !finalPosition.escrowCondition
-      ) {
-        await updateEventStatus(event.id, 'FAILED', {
-          code: 'ESCROW_NOT_CONFIGURED',
-          message: 'Position escrow metadata is missing',
-        });
-        return {
-          error: createError('ESCROW_NOT_CONFIGURED', 'Position escrow metadata is missing'),
-        };
-      }
-
-      const backendWallet = getBackendWallet();
-      const client = await getClient();
-      const finishTx = await finishEscrow(backendWallet, {
-        owner: finalPosition.escrowOwner,
-        sequence: finalPosition.escrowSequence,
-        fulfillment: finalPosition.escrowFulfillment,
-        condition: finalPosition.escrowCondition,
-      });
-
-      await upsertOnchainTransaction({
-        txHash: finishTx.txHash,
-        validated: true,
-        txType: 'EscrowFinish',
-        sourceAddress: backendWallet.address,
-        destinationAddress: getBackendAddress(),
-        currency: market.collateral_currency,
-        issuer: market.collateral_issuer,
-        amount: finalPosition.collateralAmount,
-        rawTxJson: {
-          operation: 'ESCROW_FINISH_RELEASE',
-          owner: finalPosition.escrowOwner,
-          sequence: finalPosition.escrowSequence,
-        },
-        rawMetaJson: null,
-      });
-
-      const payoutTx = await sendToken(
-        client,
-        backendWallet,
-        senderAddress,
-        market.collateral_currency,
-        finalPosition.collateralAmount.toString(),
-        market.collateral_issuer
+    let loanDeleteTxHash: string | undefined;
+    if (debtAfterPay <= 0) {
+      const deleteResponse = await client.submitAndWait(
+        {
+          TransactionType: 'LoanDelete',
+          Account: userAddress,
+          LoanID: loanId,
+        } as never,
+        { wallet: borrowerWallet }
       );
 
-      if (payoutTx.result !== 'tesSUCCESS') {
-        await updateEventStatus(event.id, 'FAILED', {
-          code: 'COLLATERAL_PAYOUT_FAILED',
-          message: `Collateral payout failed: ${payoutTx.result}`,
+      const deleteResult = deleteResponse.result as unknown as Record<string, unknown>;
+      const deleteMeta =
+        typeof deleteResult.meta === 'object' && deleteResult.meta !== null
+          ? (deleteResult.meta as Record<string, unknown>)
+          : null;
+      const deleteTxResult = extractTransactionResult(deleteMeta);
+      if (deleteTxResult === 'tesSUCCESS' && typeof deleteResult.hash === 'string') {
+        loanDeleteTxHash = deleteResult.hash;
+        await upsertOnchainTransaction({
+          txHash: deleteResult.hash,
+          validated: true,
+          txType: 'LoanDelete',
+          sourceAddress: userAddress,
+          destinationAddress: market.loan_broker_address || market.debt_issuer,
+          currency: verified.amount.currency,
+          issuer: verified.amount.issuer,
+          amount: 0,
+          rawTxJson: {
+            TransactionType: 'LoanDelete',
+            Account: userAddress,
+            LoanID: loanId,
+          },
+          rawMetaJson: deleteMeta,
         });
-        return {
-          error: createError('COLLATERAL_PAYOUT_FAILED', `Collateral payout failed: ${payoutTx.result}`),
-        };
       }
 
-      await upsertOnchainTransaction({
-        txHash: payoutTx.hash,
-        validated: true,
-        txType: payoutTx.transactionType ?? 'Payment',
-        sourceAddress: backendWallet.address,
-        destinationAddress: senderAddress,
-        currency: market.collateral_currency,
-        issuer: market.collateral_issuer,
-        amount: finalPosition.collateralAmount,
-        rawTxJson: buildOutboundRawTxJson({
-          tx: payoutTx,
-          sourceAddress: backendWallet.address,
-          destinationAddress: senderAddress,
-          currency: market.collateral_currency,
-          issuer: market.collateral_issuer,
-          amount: finalPosition.collateralAmount,
-        }),
-        rawMetaJson: payoutTx.rawMeta || null,
-      });
-
-      await removeCollateral(finalPosition.id, finalPosition.collateralAmount);
-      await clearPositionEscrowMetadata(finalPosition.id);
-      collateralReleasedTxHash = payoutTx.hash;
+      await clearPositionLoanMetadata(position.id);
     }
+
+    const remainingDebt = debtAfterPay;
 
     // Update event
     await updateEventStatus(event.id, 'COMPLETED');
@@ -1779,26 +1967,29 @@ export async function processRepay(
       eventType: LENDING_EVENTS.REPAY_CONFIRMED,
       module: 'LENDING',
       status: 'COMPLETED',
-      userAddress: senderAddress,
+      userAddress,
       marketId,
       positionId: position.id,
       onchainTxId: onchainTx.id,
-      amount,
+      amount: paidAmount,
       currency: market.debt_currency,
-      payload: { interestPaid, principalPaid, excess, collateralReleasedTxHash },
+      payload: { txHash, loanId, loanDeleteTxHash, interestPaid, principalPaid, excess },
     });
 
     return {
       result: {
-        positionId: finalPosition.id,
-        amountRepaid: amount,
+        positionId: position.id,
+        amountRepaid: paidAmount,
         interestPaid,
         principalPaid,
         remainingDebt,
-        collateralReleasedTxHash,
       },
     };
   } catch (err) {
+    if (err instanceof LoanProtocolError) {
+      await updateEventStatus(event.id, 'FAILED', { code: err.code, message: err.message });
+      return { error: createError(err.code, err.message) };
+    }
     const message = err instanceof Error ? err.message : 'Unknown error';
     await updateEventStatus(event.id, 'FAILED', { code: 'INTERNAL_ERROR', message });
     return { error: createError('INTERNAL_ERROR', message) };
@@ -1884,14 +2075,25 @@ export async function processWithdraw(
     return { error: createError('NO_POSITION', 'No active position found') };
   }
 
-  const updatedPosition = await accrueInterest(position);
-  const totalDebt = calculateTotalDebt(updatedPosition.loanPrincipal, updatedPosition.interestAccrued);
+  const loanId = await findBorrowerActiveLoanIdOnChain(market, userAddress);
+  let totalDebt = 0;
+  if (loanId) {
+    try {
+      const client = await getClient();
+      const loanInfo = await getLoanInfo(client, loanId);
+      totalDebt = parsePositiveNumber(loanInfo.outstandingDebt) ?? 0;
+    } catch {
+      totalDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress) ?? 0;
+    }
+  }
 
   if (totalDebt > 0) {
     return {
       error: createError('DEBT_OUTSTANDING', 'Repay all debt before withdrawing escrowed collateral'),
     };
   }
+
+  const updatedPosition = position;
 
   if (Math.abs(amount - updatedPosition.collateralAmount) > 0.00000001) {
     return {
@@ -2041,16 +2243,25 @@ export async function processLiquidation(
   let positions: Position[];
   if (userAddress) {
     const position = await getPositionForUser(userAddress, marketId);
-    if (
-      position &&
-      checkPositionLiquidatable(
-        position,
-        market.liquidation_ltv_ratio,
-        prices.collateralPriceUsd,
-        prices.debtPriceUsd
-      )
-    ) {
-      positions = [position];
+    if (position) {
+      const chainDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
+      const candidate = {
+        ...position,
+        loanPrincipal: toAmount(Math.max(0, chainDebt ?? 0)),
+        interestAccrued: 0,
+      };
+      if (
+        checkPositionLiquidatable(
+          candidate,
+          market.liquidation_ltv_ratio,
+          prices.collateralPriceUsd,
+          prices.debtPriceUsd
+        )
+      ) {
+        positions = [candidate];
+      } else {
+        positions = [];
+      }
     } else {
       positions = [];
     }
@@ -2075,8 +2286,7 @@ export async function processLiquidation(
     });
 
     try {
-      // Accrue interest
-      const updatedPosition = await accrueInterest(position);
+      const updatedPosition = position;
 
       if (
         !updatedPosition.escrowOwner ||
@@ -2165,7 +2375,7 @@ export async function processLiquidation(
 export async function getPositionWithMetrics(
   userAddress: string,
   marketId: string
-): Promise<{ position: Position; metrics: PositionMetrics; market: Market } | null> {
+): Promise<{ position: Position; metrics: PositionMetrics; market: Market; loan: LoanRepaymentOverview | null } | null> {
   const market = await getMarketById(marketId);
   if (!market) {
     return null;
@@ -2176,7 +2386,7 @@ export async function getPositionWithMetrics(
     return null;
   }
 
-  const position = await recoverPositionLoanMetadata(rawPosition, userAddress, marketId);
+  const position = rawPosition;
 
   const prices = await getMarketPrices(marketId);
   if (!prices) {
@@ -2190,10 +2400,13 @@ export async function getPositionWithMetrics(
   }
 
   let debtAdjustedPosition = position;
-  if (position.loanId) {
+  let loanRepaymentOverview: LoanRepaymentOverview | null = null;
+  const resolvedLoanId = await findBorrowerActiveLoanIdOnChain(market, userAddress);
+
+  if (resolvedLoanId) {
     try {
       const client = await getClient();
-      const loanInfo = await getLoanInfo(client, position.loanId);
+      const loanInfo = await getLoanInfo(client, resolvedLoanId);
       const totalDebt = parsePositiveNumber(loanInfo.outstandingDebt);
       if (totalDebt !== null) {
         const principal = parsePositiveNumber(loanInfo.principal);
@@ -2207,18 +2420,66 @@ export async function getPositionWithMetrics(
           interestAccrued: toAmount(interestValue),
         };
       }
+
+      const periodicPayment = readLoanNumericField(loanInfo.raw, [
+        'PeriodicPayment',
+        'periodicPayment',
+        'periodic_payment',
+      ]);
+      const paymentRemaining = readLoanNumericField(loanInfo.raw, [
+        'PaymentRemaining',
+        'paymentRemaining',
+        'payment_remaining',
+        'RemainingPayments',
+      ]);
+      const nextPaymentDueRippleEpoch = readLoanNumericField(loanInfo.raw, [
+        'NextPaymentDueDate',
+        'nextPaymentDueDate',
+        'next_payment_due_date',
+        'NextDueDate',
+      ]);
+      const nextPaymentDue = rippleEpochToDate(nextPaymentDueRippleEpoch);
+      const minimumRepayment = getLoanMinimumRepayment(loanInfo);
+      const fullRepayment = parsePositiveNumber(loanInfo.outstandingDebt);
+      const suggestedOverpayment =
+        minimumRepayment !== null && fullRepayment !== null
+          ? Math.min(fullRepayment, minimumRepayment * 1.5)
+          : minimumRepayment;
+
+      loanRepaymentOverview = {
+        loanId: resolvedLoanId,
+        minimumRepayment,
+        fullRepayment,
+        suggestedOverpayment,
+        periodicPayment,
+        paymentRemaining,
+        nextPaymentDueDate: nextPaymentDue ? nextPaymentDue.toISOString() : null,
+        nextPaymentDueRippleEpoch,
+        isPastDue: nextPaymentDue ? nextPaymentDue.getTime() < Date.now() : false,
+      };
     } catch {
-      // Fallback to DB debt values when on-chain lookup is temporarily unavailable.
-    }
-  } else {
-    // Fallback: derive borrower debt directly from on-chain Loan objects for this market.
-    const borrowerDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
-    if (borrowerDebt !== null) {
+      const borrowerDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
       debtAdjustedPosition = {
         ...position,
-        loanPrincipal: toAmount(borrowerDebt),
+        loanPrincipal: toAmount(Math.max(0, borrowerDebt ?? 0)),
         interestAccrued: 0,
       };
+
+      if (borrowerDebt !== null && borrowerDebt <= 0) {
+        await clearPositionLoanMetadata(position.id);
+      }
+    }
+  } else {
+    // On-chain first: derive borrower debt from on-chain Loan objects for this market.
+    const borrowerDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
+    debtAdjustedPosition = {
+      ...position,
+      loanPrincipal: toAmount(Math.max(0, borrowerDebt ?? 0)),
+      interestAccrued: 0,
+    };
+
+    if (borrowerDebt !== null && borrowerDebt <= 0 && (position.loanPrincipal > 0 || position.interestAccrued > 0 || position.loanId)) {
+      await clearPositionLoanMetadata(position.id);
     }
   }
 
@@ -2235,7 +2496,7 @@ export async function getPositionWithMetrics(
     availableLiquidity: pool.availableLiquidity,
   };
 
-  return { position: debtAdjustedPosition, metrics, market: marketData };
+  return { position: debtAdjustedPosition, metrics, market: marketData, loan: loanRepaymentOverview };
 }
 
 function buildSupplyPositionMetrics(position: SupplyPosition, pool: PoolMetrics): SupplyPositionMetrics {

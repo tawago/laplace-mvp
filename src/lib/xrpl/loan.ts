@@ -155,6 +155,27 @@ function readOptionalStringField(input: unknown, keys: string[]): string | null 
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function readOptionalAmountValueField(input: unknown, keys: string[]): string | null {
+  const value = findValueByKey(input, keys);
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (isRecord(value)) {
+    const amountValue = value.value;
+    if (typeof amountValue === 'string' && amountValue.length > 0) {
+      return amountValue;
+    }
+    if (typeof amountValue === 'number' && Number.isFinite(amountValue)) {
+      return String(amountValue);
+    }
+  }
+
+  return null;
+}
+
 function readOptionalNumberField(input: unknown, keys: string[]): number | null {
   const value = findValueByKey(input, keys);
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -441,19 +462,19 @@ export async function getLoanInfo(client: Client, loanId: string): Promise<LoanI
       loanId: readOptionalStringField(node, ['LoanID', 'LoanId', 'loan_id']) || loanId,
       borrower: readOptionalStringField(node, ['Borrower', 'Account']),
       lender: readOptionalStringField(node, ['Lender']),
-      principal: readOptionalStringField(node, [
+      principal: readOptionalAmountValueField(node, [
         'Principal',
         'principal',
         'PrincipalAmount',
         'PrincipalOutstanding',
       ]),
-      outstandingDebt: readOptionalStringField(node, [
+      outstandingDebt: readOptionalAmountValueField(node, [
         'OutstandingDebt',
         'outstanding_debt',
         'Debt',
         'TotalValueOutstanding',
       ]),
-      accruedInterest: readOptionalStringField(node, ['AccruedInterest', 'accrued_interest', 'Interest']),
+      accruedInterest: readOptionalAmountValueField(node, ['AccruedInterest', 'accrued_interest', 'Interest']),
       maturityDate: readOptionalNumberField(node, ['MaturityDate', 'maturity_date', 'Maturity']),
       status: readOptionalStringField(node, ['Status', 'status']),
       raw: node,

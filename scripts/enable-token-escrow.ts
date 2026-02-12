@@ -4,15 +4,10 @@ import { Client, Wallet } from 'xrpl';
 
 const ASF_ALLOW_TRUSTLINE_LOCKING = 17;
 
-const NETWORK_CONFIG = {
-  testnet: 'wss://s.altnet.rippletest.net:51233',
-  devnet: 'wss://s.devnet.rippletest.net:51233',
-} as const;
+const DEVNET_WS_URL = 'wss://s.devnet.rippletest.net:51233';
 
 async function main() {
-  const isDevnet = process.argv.includes('--devnet');
-  const network = isDevnet ? 'devnet' : 'testnet';
-  const wsUrl = process.env.NEXT_PUBLIC_TESTNET_URL || NETWORK_CONFIG[network];
+  const wsUrl = process.env.NEXT_PUBLIC_XRPL_WS_URL || DEVNET_WS_URL;
 
   const issuerSeed = process.env.ISSUER_WALLET_SEED;
   if (!issuerSeed) {
@@ -23,7 +18,7 @@ async function main() {
   const client = new Client(wsUrl);
 
   try {
-    console.log(`Connecting to ${network} (${wsUrl})...`);
+    console.log(`Connecting to devnet (${wsUrl})...`);
     await client.connect();
 
     const tx = await client.submitAndWait(

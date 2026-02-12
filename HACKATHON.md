@@ -59,17 +59,17 @@ Reference implementation points:
 - Core lending orchestration: `src/lib/lending/service.ts`
 - Financial calculations: `src/lib/lending/calculations.ts`
 
-## Live Demo (Testnet Evidence)
+## Live Demo (Devnet Evidence)
 
-Replace placeholders below with your final testnet hashes and explorer links.
+Replace placeholders below with your final devnet hashes and explorer links.
 
 | Step | What happened | Tx hash | Explorer |
 |---|---|---|---|
-| 1 | Borrower deposits collateral | `TODO_DEPOSIT_HASH` | `https://testnet.xrpl.org/transactions/TODO_DEPOSIT_HASH` |
-| 2 | Protocol confirms and records position | `TODO_DEPOSIT_HASH` | `https://testnet.xrpl.org/transactions/TODO_DEPOSIT_HASH` |
-| 3 | Borrow executes and debt tokens are sent | `TODO_BORROW_HASH` | `https://testnet.xrpl.org/transactions/TODO_BORROW_HASH` |
-| 4 | Repayment transaction is verified | `TODO_REPAY_HASH` | `https://testnet.xrpl.org/transactions/TODO_REPAY_HASH` |
-| 5 | Collateral withdrawal (or liquidation test) | `TODO_WITHDRAW_OR_LIQ_HASH` | `https://testnet.xrpl.org/transactions/TODO_WITHDRAW_OR_LIQ_HASH` |
+| 1 | Borrower deposits collateral | `TODO_DEPOSIT_HASH` | `https://devnet.xrpl.org/transactions/TODO_DEPOSIT_HASH` |
+| 2 | Protocol confirms and records position | `TODO_DEPOSIT_HASH` | `https://devnet.xrpl.org/transactions/TODO_DEPOSIT_HASH` |
+| 3 | Borrow executes and debt tokens are sent | `TODO_BORROW_HASH` | `https://devnet.xrpl.org/transactions/TODO_BORROW_HASH` |
+| 4 | Repayment transaction is verified | `TODO_REPAY_HASH` | `https://devnet.xrpl.org/transactions/TODO_REPAY_HASH` |
+| 5 | Collateral withdrawal (or liquidation test) | `TODO_WITHDRAW_OR_LIQ_HASH` | `https://devnet.xrpl.org/transactions/TODO_WITHDRAW_OR_LIQ_HASH` |
 
 ## Technical Architecture
 
@@ -109,7 +109,7 @@ This framing is aligned for institutional pilots and committee review (risk/comp
 
 - USD 500M+ real estate pipeline (project-provided figure).
 - Distribution partnership with approximately 50K users (project-provided figure).
-- MVP demonstrates collateralized credit lifecycle on XRPL testnet with verifiable transactions.
+- MVP demonstrates collateralized credit lifecycle on XRPL devnet with verifiable transactions.
 
 ## Getting Started
 
@@ -117,7 +117,7 @@ This framing is aligned for institutional pilots and committee review (risk/comp
 
 - Node.js + pnpm
 - Neon Postgres database
-- XRPL testnet wallet seeds/addresses
+- XRPL devnet wallet seeds/addresses
 
 ### Environment Variables
 
@@ -129,8 +129,8 @@ BACKEND_WALLET_SEED=...
 ISSUER_WALLET_SEED=...
 BACKEND_ADDRESS=...
 ISSUER_ADDRESS=...
-NEXT_PUBLIC_TESTNET_URL=wss://s.altnet.rippletest.net:51233
-NEXT_PUBLIC_TESTNET_EXPLORER=https://testnet.xrpl.org
+NEXT_PUBLIC_XRPL_WS_URL=wss://s.devnet.rippletest.net:51233
+NEXT_PUBLIC_XRPL_EXPLORER_URL=https://devnet.xrpl.org
 XRPL_STORE_FULL_TX_JSON=false
 ```
 

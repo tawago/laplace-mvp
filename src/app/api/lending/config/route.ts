@@ -91,7 +91,7 @@ export async function GET() {
         issuerAddress,
         backendAddress,
         network: getXrplNetwork(),
-        testnetUrl: getXrplWsUrl(),
+        xrplWsUrl: getXrplWsUrl(),
         explorerUrl: getXrplExplorerUrl(),
       },
     });

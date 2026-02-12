@@ -5,8 +5,8 @@
  * Uses Drizzle ORM for idempotent market and price oracle upserts.
  *
  * Prerequisites:
- * - DATABASE_URL must be set in .env.local (testnet) or .env.devnet (devnet)
- * - ISSUER_ADDRESS must be set (from setup-testnet.ts)
+ * - DATABASE_URL must be set in .env.local
+ * - ISSUER_ADDRESS must be set (from setup-devnet.ts)
  *
  * Run with: npx tsx scripts/init-db.ts
  */
@@ -14,17 +14,13 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-const isDevnet = process.argv.includes('--devnet');
-const selectedNetwork = isDevnet ? 'devnet' : 'testnet';
+const selectedNetwork = 'devnet';
 
 // Load environment variables from .env.local BEFORE importing db
 dotenv.config({ path: path.join(process.cwd(), '.env.local') });
-if (isDevnet) {
-  dotenv.config({ path: path.join(process.cwd(), '.env.devnet'), override: true });
-}
 
 if (!process.env.NEXT_PUBLIC_XRPL_NETWORK) {
-  process.env.NEXT_PUBLIC_XRPL_NETWORK = selectedNetwork;
+  process.env.NEXT_PUBLIC_XRPL_NETWORK = 'devnet';
 }
 
 // Validate required env vars before importing db module
@@ -40,13 +36,13 @@ if (!process.env.DATABASE_URL) {
 
 if (!process.env.ISSUER_ADDRESS) {
   console.error('Error: ISSUER_ADDRESS not found in environment.');
-  console.log('Please run setup-testnet.ts first to create wallets.');
+  console.log('Please run setup-devnet.ts first to create wallets.');
   process.exit(1);
 }
 
 if (!process.env.BACKEND_WALLET_SEED) {
   console.error('Error: BACKEND_WALLET_SEED not found in environment.');
-  console.log('Please run setup-testnet.ts first to create wallets.');
+  console.log('Please run setup-devnet.ts first to create wallets.');
   process.exit(1);
 }
 
@@ -60,7 +56,7 @@ async function main() {
     setMarketLoanBrokerConfig,
   } = await import('../src/lib/db/seed');
   const { getBackendWallet, getLoanBrokerWallet } = await import('../src/lib/xrpl/wallet');
-  const { getClient } = await import('../src/lib/xrpl/client');
+  const { getClient, disconnectClient } = await import('../src/lib/xrpl/client');
   const { checkVaultSupport, createSupplyVault } = await import('../src/lib/xrpl/vault');
   const { checkLoanProtocolSupport, createLoanBroker } = await import('../src/lib/xrpl/loan');
 
@@ -171,11 +167,15 @@ async function main() {
     console.log('='.repeat(60));
     console.log();
     console.log('You can now start the dev server:');
-    console.log(`  npm run ${isDevnet ? 'dev:devnet' : 'dev'}`);
+    console.log('  npm run dev');
   } catch (error) {
     console.error('Error initializing database:', error);
     process.exit(1);
+  } finally {
+    await disconnectClient();
   }
+
+  process.exit(0);
 }
 
 main();

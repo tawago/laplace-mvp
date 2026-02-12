@@ -4,7 +4,7 @@
 
 ## Current Status (Lending PoC)
 
-This repository now includes a hybrid implementation (legacy mock UI + real lending backend on XRPL testnet/devnet):
+This repository now includes a hybrid implementation (legacy mock UI + real lending backend on XRPL devnet):
 
 - **Phase 1 complete:** Vault-based supply/liquidity flow
 - **Phase 2 in progress:** Escrow-based collateral flow for borrower deposit/withdraw lifecycle
@@ -13,45 +13,35 @@ Because of Vault + Escrow support, setup now has a few required steps before usi
 
 ### Lending Setup Checklist
 
-1. Configure environment (`.env.local` or `.env.devnet`) including `DATABASE_URL`.
+1. Configure environment (`.env.local`) including `DATABASE_URL`.
 2. Create/fund issuer + backend wallets and token trust lines:
 
 ```bash
-pnpm setup:testnet
-# or
-pnpm setup:devnet
+pnpm setup:xrpl
 ```
 
 3. Ensure issuer token escrow permission is enabled (`asfAllowTrustLineLocking`):
 
 ```bash
 pnpm setup:escrow
-# or
-pnpm setup:escrow:devnet
 ```
 
 4. Initialize schema/data:
 
 ```bash
 pnpm setup:db
-# or
-pnpm setup:db:devnet
 ```
 
 5. Apply latest schema migrations (including escrow columns):
 
 ```bash
 pnpm db:push
-# or
-pnpm db:push:devnet
 ```
 
 6. Start app:
 
 ```bash
 pnpm dev
-# or
-pnpm dev:devnet
 ```
 
 ---

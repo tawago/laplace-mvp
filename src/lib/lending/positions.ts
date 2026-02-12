@@ -431,6 +431,22 @@ export async function setPositionLoanMetadata(
     .where(eq(positions.id, positionId));
 }
 
+export async function clearPositionLoanMetadata(positionId: string): Promise<void> {
+  await db
+    .update(positions)
+    .set({
+      loanId: null,
+      loanHash: null,
+      loanTermMonths: 3,
+      loanMaturityDate: null,
+      loanOpenedAtLedgerIndex: null,
+      loanPrincipal: '0',
+      interestAccrued: '0',
+      lastInterestUpdate: new Date(),
+    })
+    .where(eq(positions.id, positionId));
+}
+
 /**
  * Calculate position metrics
  */

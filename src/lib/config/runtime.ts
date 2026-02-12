@@ -1,43 +1,31 @@
-export type XrplNetwork = 'testnet' | 'devnet';
+export type XrplNetwork = 'devnet';
 
-const DEFAULTS: Record<XrplNetwork, { wsUrl: string; explorerUrl: string }> = {
-  testnet: {
-    wsUrl: 'wss://s.altnet.rippletest.net:51233',
-    explorerUrl: 'https://testnet.xrpl.org',
-  },
-  devnet: {
-    wsUrl: 'wss://s.devnet.rippletest.net:51233',
-    explorerUrl: 'https://devnet.xrpl.org',
-  },
+const DEVNET_DEFAULTS = {
+  wsUrl: 'wss://s.devnet.rippletest.net:51233',
+  explorerUrl: 'https://devnet.xrpl.org',
 };
-
-function isXrplNetwork(value: string): value is XrplNetwork {
-  return value === 'testnet' || value === 'devnet';
-}
 
 export function getXrplNetwork(): XrplNetwork {
   const rawNetwork = process.env.NEXT_PUBLIC_XRPL_NETWORK;
   if (!rawNetwork) {
-    return 'testnet';
+    return 'devnet';
   }
 
-  if (!isXrplNetwork(rawNetwork)) {
+  if (rawNetwork !== 'devnet') {
     throw new Error(
-      `Invalid NEXT_PUBLIC_XRPL_NETWORK: "${rawNetwork}". Expected "testnet" or "devnet".`
+      `Invalid NEXT_PUBLIC_XRPL_NETWORK: "${rawNetwork}". Expected "devnet".`
     );
   }
 
-  return rawNetwork;
+  return 'devnet';
 }
 
 export function getXrplWsUrl(): string {
-  const network = getXrplNetwork();
-  return process.env.NEXT_PUBLIC_TESTNET_URL || DEFAULTS[network].wsUrl;
+  return process.env.NEXT_PUBLIC_XRPL_WS_URL || DEVNET_DEFAULTS.wsUrl;
 }
 
 export function getXrplExplorerUrl(): string {
-  const network = getXrplNetwork();
-  return process.env.NEXT_PUBLIC_TESTNET_EXPLORER || DEFAULTS[network].explorerUrl;
+  return process.env.NEXT_PUBLIC_XRPL_EXPLORER_URL || DEVNET_DEFAULTS.explorerUrl;
 }
 
 export function getDatabaseUrl(): string {
@@ -46,12 +34,10 @@ export function getDatabaseUrl(): string {
     return direct;
   }
 
-  const network = getXrplNetwork();
   throw new Error(
     [
-      `Missing database configuration for ${network}.`,
-      'Set DATABASE_URL in your network env file:',
-      network === 'devnet' ? '- .env.devnet' : '- .env.local',
+      'Missing database configuration for devnet.',
+      'Set DATABASE_URL in .env.local.',
     ].join('\n')
   );
 }

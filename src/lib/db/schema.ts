@@ -186,7 +186,6 @@ export const appEvents = pgTable(
     eventType: text('event_type').notNull(),
     module: eventModuleEnum('module').notNull(),
     status: eventStatusEnum('status').notNull(),
-    userId: uuid('user_id').references(() => users.id),
     userAddress: text('user_address'),
     marketId: uuid('market_id').references(() => markets.id),
     positionId: uuid('position_id').references(() => positions.id),

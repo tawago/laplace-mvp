@@ -132,7 +132,6 @@ export interface AppEvent {
   eventType: string;
   module: EventModule;
   status: EventStatus;
-  userId: string | null;
   userAddress: string | null;
   marketId: string | null;
   positionId: string | null;

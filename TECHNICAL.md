@@ -258,6 +258,6 @@ Template format:
 ```text
 Operation: <name>
 Tx Hash: <hash>
-Explorer: https://testnet.xrpl.org/transactions/<hash>
+Explorer: https://devnet.xrpl.org/transactions/<hash>
 Expected effect: <state transition>
 ```
