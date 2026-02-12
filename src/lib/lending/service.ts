@@ -106,6 +106,7 @@ import {
   verifyEscrowMatchesExpected,
   verifyConditionFulfillment,
 } from '../xrpl/escrow';
+import { invalidateLendingReadCaches } from '../xrpl/cache';
 
 export interface LendingServiceError {
   code: string;
@@ -358,6 +359,25 @@ function getRepayFlags(repayKind: RepayKind): number {
   if (repayKind === 'full') return 0x00020000;
   if (repayKind === 'late') return 0x00040000;
   return 0;
+}
+
+function getLoanScaleDigits(raw: Record<string, unknown>): number {
+  const scale = readLoanNumericField(raw, ['LoanScale', 'loanScale', 'loan_scale']);
+  if (scale !== null && Number.isInteger(scale) && scale >= 0 && scale <= 16) {
+    return scale;
+  }
+  return TOKEN_SCALE;
+}
+
+function getSmallestUnitForLoan(raw: Record<string, unknown>): Decimal {
+  const digits = getLoanScaleDigits(raw);
+  return new Decimal(1).div(new Decimal(10).pow(digits));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function getBorrowerOutstandingDebtOnChain(
@@ -1716,21 +1736,100 @@ export async function processRepay(
     }
 
     const client = await getClient();
-    const loanInfoBeforePay = await getLoanInfo(client, loanId);
+
+    const getFreshLoanInfo = async () => {
+      invalidateLendingReadCaches({ loanId });
+      return getLoanInfo(client, loanId);
+    };
+
+    const tryLoanDelete = async (currency: string, issuer: string): Promise<string | undefined> => {
+      try {
+        const deleteResponse = await client.submitAndWait(
+          {
+            TransactionType: 'LoanDelete',
+            Account: userAddress,
+            LoanID: loanId,
+          } as never,
+          { wallet: borrowerWallet }
+        );
+
+        const deleteResult = deleteResponse.result as unknown as Record<string, unknown>;
+        const deleteMeta =
+          typeof deleteResult.meta === 'object' && deleteResult.meta !== null
+            ? (deleteResult.meta as Record<string, unknown>)
+            : null;
+        const deleteTxResult = extractTransactionResult(deleteMeta);
+        if (deleteTxResult !== 'tesSUCCESS' || typeof deleteResult.hash !== 'string') {
+          return undefined;
+        }
+
+        await upsertOnchainTransaction({
+          txHash: deleteResult.hash,
+          validated: true,
+          txType: 'LoanDelete',
+          sourceAddress: userAddress,
+          destinationAddress: market.loan_broker_address || market.debt_issuer,
+          currency,
+          issuer,
+          amount: 0,
+          rawTxJson: {
+            TransactionType: 'LoanDelete',
+            Account: userAddress,
+            LoanID: loanId,
+          },
+          rawMetaJson: deleteMeta,
+        });
+
+        return deleteResult.hash;
+      } catch {
+        return undefined;
+      }
+    };
+
+    const loanInfoBeforePay = await getFreshLoanInfo();
     const debtBeforePay = parsePositiveNumber(loanInfoBeforePay.outstandingDebt) ?? 0;
     if (debtBeforePay <= 0) {
-      await updateEventStatus(event.id, 'FAILED', {
-        code: 'NO_DEBT',
-        message: 'No outstanding debt to repay',
+      const paymentRemaining = readLoanNumericField(loanInfoBeforePay.raw, [
+        'PaymentRemaining',
+        'paymentRemaining',
+        'payment_remaining',
+        'RemainingPayments',
+      ]);
+      const loanDeleteTxHash = await tryLoanDelete(market.debt_currency, market.debt_issuer);
+
+      if ((paymentRemaining !== null && paymentRemaining <= 0) || loanDeleteTxHash) {
+        await clearPositionLoanMetadata(position.id);
+      }
+
+      await updateEventStatus(event.id, 'COMPLETED');
+      await emitAppEvent({
+        eventType: LENDING_EVENTS.REPAY_CONFIRMED,
+        module: 'LENDING',
+        status: 'COMPLETED',
+        userAddress,
+        marketId,
+        positionId: position.id,
+        amount: 0,
+        currency: market.debt_currency,
+        payload: { loanId, noDebt: true, loanDeleteTxHash },
       });
+
       return {
-        error: createError('NO_DEBT', 'No outstanding debt to repay'),
+        result: {
+          positionId: position.id,
+          amountRepaid: 0,
+          interestPaid: 0,
+          principalPaid: 0,
+          remainingDebt: 0,
+        },
       };
     }
 
     const fullRepayment = parsePositiveNumber(loanInfoBeforePay.outstandingDebt);
     const requestedAmount =
-      repayKind === 'full' && fullRepayment !== null ? Math.min(amount, fullRepayment) : amount;
+      repayKind === 'full' && fullRepayment !== null
+        ? new Decimal(Math.max(amount, fullRepayment)).plus(getSmallestUnitForLoan(loanInfoBeforePay.raw)).toNumber()
+        : amount;
     const minimumRepayment = getLoanMinimumRepayment(loanInfoBeforePay);
     if (minimumRepayment !== null && requestedAmount + 1e-12 < minimumRepayment) {
       await updateEventStatus(event.id, 'FAILED', {
@@ -1778,7 +1877,7 @@ export async function processRepay(
       }
 
       if (submitTxResult === 'tecINSUFFICIENT_PAYMENT') {
-        const refreshedLoanInfo = await getLoanInfo(client, loanId);
+        const refreshedLoanInfo = await getFreshLoanInfo();
         const refreshedMinimumRepayment = getLoanMinimumRepayment(refreshedLoanInfo);
         const minimumText =
           refreshedMinimumRepayment !== null
@@ -1887,15 +1986,25 @@ export async function processRepay(
     let debtAfterPay = 0;
     let principalAfterPay = 0;
     let interestAfterPay = 0;
-    try {
-      const loanInfoAfterPay = await getLoanInfo(client, loanId);
-      debtAfterPay = parsePositiveNumber(loanInfoAfterPay.outstandingDebt) ?? 0;
-      principalAfterPay = parsePositiveNumber(loanInfoAfterPay.principal) ?? debtAfterPay;
-      interestAfterPay = parsePositiveNumber(loanInfoAfterPay.accruedInterest) ?? Math.max(0, debtAfterPay - principalAfterPay);
-    } catch {
-      debtAfterPay = 0;
-      principalAfterPay = 0;
-      interestAfterPay = 0;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const loanInfoAfterPay = await getFreshLoanInfo();
+        debtAfterPay = parsePositiveNumber(loanInfoAfterPay.outstandingDebt) ?? 0;
+        principalAfterPay = parsePositiveNumber(loanInfoAfterPay.principal) ?? debtAfterPay;
+        interestAfterPay =
+          parsePositiveNumber(loanInfoAfterPay.accruedInterest) ?? Math.max(0, debtAfterPay - principalAfterPay);
+
+        if (debtAfterPay <= 0 || attempt === 2) {
+          break;
+        }
+      } catch {
+        debtAfterPay = 0;
+        principalAfterPay = 0;
+        interestAfterPay = 0;
+        break;
+      }
+
+      await sleep(450);
     }
 
     const principalBeforePay = parsePositiveNumber(loanInfoBeforePay.principal) ?? debtBeforePay;
@@ -1921,41 +2030,7 @@ export async function processRepay(
 
     let loanDeleteTxHash: string | undefined;
     if (debtAfterPay <= 0) {
-      const deleteResponse = await client.submitAndWait(
-        {
-          TransactionType: 'LoanDelete',
-          Account: userAddress,
-          LoanID: loanId,
-        } as never,
-        { wallet: borrowerWallet }
-      );
-
-      const deleteResult = deleteResponse.result as unknown as Record<string, unknown>;
-      const deleteMeta =
-        typeof deleteResult.meta === 'object' && deleteResult.meta !== null
-          ? (deleteResult.meta as Record<string, unknown>)
-          : null;
-      const deleteTxResult = extractTransactionResult(deleteMeta);
-      if (deleteTxResult === 'tesSUCCESS' && typeof deleteResult.hash === 'string') {
-        loanDeleteTxHash = deleteResult.hash;
-        await upsertOnchainTransaction({
-          txHash: deleteResult.hash,
-          validated: true,
-          txType: 'LoanDelete',
-          sourceAddress: userAddress,
-          destinationAddress: market.loan_broker_address || market.debt_issuer,
-          currency: verified.amount.currency,
-          issuer: verified.amount.issuer,
-          amount: 0,
-          rawTxJson: {
-            TransactionType: 'LoanDelete',
-            Account: userAddress,
-            LoanID: loanId,
-          },
-          rawMetaJson: deleteMeta,
-        });
-      }
-
+      loanDeleteTxHash = await tryLoanDelete(verified.amount.currency, verified.amount.issuer);
       await clearPositionLoanMetadata(position.id);
     }
 
