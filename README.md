@@ -37,65 +37,60 @@ Laplace is a lending protocol that leverages **native XRPL transaction types** i
 
 ```mermaid
 flowchart LR
-    subgraph FE["Client (Next.js UI)"]
-        U[Borrower / Lender]
-        UI[Borrow and Lend pages]
-        WALLET[Wallet seed or signed tx]
+    subgraph RWA["RWA Originator / Platform"]
+        ASSET[Real-world assets]
+        ISSUE[Issue RWA tokens]
     end
 
-    subgraph BE["API + Service Layer"]
-        API["/api/lending/*"]
-        SVC[Lending service + risk checks]
-        CALC[LTV, interest, liquidation math]
-        ORACLE[Price source]
+    subgraph USERS["Participants"]
+        INV[Token investors]
+        BRW[Borrowers]
+        LP[Liquidity suppliers]
     end
 
-    subgraph LEDGER["XRPL Devnet (Settlement)"]
-        ESC[EscrowCreate / EscrowFinish]
-        LOAN[LoanSet / LoanPay / LoanDelete]
-        VAULT[VaultCreate / VaultDeposit / VaultWithdraw]
-        TOKENS[TrustSet / Payment]
+    subgraph LAPLACE["Laplace Business Flows"]
+        MARKET[RWA token sale + market access]
+        COLL[Use RWA tokens as collateral]
+        POOL[Supply lending capital]
+        CREDIT[Borrow and repay]
+        YIELD[Distribute lender yield]
     end
 
-    subgraph DATA["Neon Postgres (State + Audit)"]
-        POS[(positions)]
-        SUP[(supply_positions)]
-        MKT[(markets)]
-        TX[(onchain_transactions)]
-        EVT[(app_events)]
-        PR[(price_oracle)]
+    subgraph XRPL["XRPL Rails"]
+        TOK[Token issuance + transfer]
+        ESC[Collateral escrow]
+        LOAN[Native loan lifecycle]
+        VAULT[Vault pool accounting]
     end
 
-    U --> UI
-    WALLET --> UI
-    UI -->|1. request action| API
-    API --> SVC
-    SVC --> CALC
-    ORACLE --> CALC
-    PR --> ORACLE
+    ASSET --> ISSUE
+    ISSUE -->|Sell tokenized exposure| INV
+    ISSUE -->|Sell tokenized exposure| BRW
+    ISSUE --> MARKET
 
-    SVC -->|2a. collateral lock| ESC
-    SVC -->|2b. debt origination/repay| LOAN
-    SVC -->|2c. pool liquidity| VAULT
-    SVC -->|2d. token transfers| TOKENS
+    BRW -->|Pledge RWA tokens| COLL
+    COLL --> ESC
 
-    ESC -->|3. tx hash + result| SVC
-    LOAN -->|3. tx hash + result| SVC
-    VAULT -->|3. tx hash + result| SVC
-    TOKENS -->|3. tx hash + result| SVC
+    LP -->|Provide lendable liquidity| POOL
+    POOL --> VAULT
 
-    SVC -->|4a. update business state| POS
-    SVC -->|4b. update supply state| SUP
-    SVC -->|4c. update pool metrics| MKT
-    SVC -->|4d. persist ledger proof| TX
-    SVC -->|4e. idempotency + timeline| EVT
+    BRW -->|Request loan| CREDIT
+    POOL -->|Capital source| CREDIT
+    CREDIT -->|Debt tokens| BRW
+    CREDIT -->|Repayment + interest| POOL
+
+    POOL --> YIELD
+    YIELD -->|Yield payouts| LP
+
+    MARKET --> TOK
+    CREDIT --> LOAN
 ```
 
 **Key boundaries:**
-- **Execution split:** service layer enforces policy/risk; XRPL is the settlement source of truth.
-- **Two user paths:** borrower path uses Escrow + Loan txs; lender path uses Vault txs.
-- **Ledger proof:** each state-changing action stores tx hash + metadata in `onchain_transactions`.
-- **Replay safety:** app-side state transitions are recorded with idempotent `app_events`.
+- **Tokenization first:** Laplace issues and distributes RWA tokens representing real-world exposure.
+- **Collateralized borrowing:** borrowers lock those RWA tokens to access loan liquidity.
+- **Yield model:** suppliers provide capital and earn yield from borrower repayments.
+- **XRPL-backed rails:** issuance/transfers, escrow locks, loan state, and vault accounting settle on XRPL primitives.
 
 ---
 
