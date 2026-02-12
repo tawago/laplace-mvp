@@ -23,6 +23,9 @@ export interface Market {
   minCollateralAmount: number;
   minBorrowAmount: number;
   minSupplyAmount?: number;
+  supplyVaultId?: string | null;
+  supplyMptIssuanceId?: string | null;
+  vaultScale?: number;
   totalSupplied?: number;
   totalBorrowed?: number;
   globalYieldIndex?: number;
@@ -68,6 +71,7 @@ export interface PositionMetrics {
   liquidatable: boolean;
   maxBorrowableAmount: number;
   maxWithdrawableAmount: number;
+  availableLiquidity?: number;
 }
 
 export interface PoolMetrics {

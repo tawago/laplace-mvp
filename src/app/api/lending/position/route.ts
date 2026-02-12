@@ -81,6 +81,7 @@ export async function GET(request: NextRequest) {
           liquidatable: metrics.liquidatable,
           maxBorrowableAmount: metrics.maxBorrowableAmount,
           maxWithdrawableAmount: metrics.maxWithdrawableAmount,
+          availableLiquidity: metrics.availableLiquidity ?? 0,
         },
         market: {
           id: market.id,

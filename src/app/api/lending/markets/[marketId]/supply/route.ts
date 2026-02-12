@@ -6,6 +6,8 @@ interface RouteContext {
   params: Promise<{ marketId: string }>;
 }
 
+const TX_HASH_REGEX = /^[A-F0-9]{64}$/i;
+
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { marketId } = await context.params;
@@ -27,6 +29,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
         {
           success: false,
           error: { code: 'MISSING_TX_HASH', message: 'txHash is required' },
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!TX_HASH_REGEX.test(txHash)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'INVALID_TX_HASH', message: 'txHash must be a 64-character hex string' },
         },
         { status: 400 }
       );
@@ -57,9 +69,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (error) {
       let status = 400;
       if (error.code === 'MARKET_NOT_FOUND') status = 404;
+      if (error.code === 'VAULT_NOT_CONFIGURED') status = 422;
       if (error.code === 'OPERATION_IN_PROGRESS') status = 409;
       if (error.code === 'IDEMPOTENCY_MISMATCH') status = 409;
       if (error.code === 'TX_ALREADY_PROCESSED') status = 409;
+      if (error.code === 'TX_FAILED') status = 422;
+      if (error.code === 'NOT_VAULT_DEPOSIT') status = 422;
+      if (error.code === 'WRONG_VAULT') status = 422;
       if (error.code === 'SUPPLY_FAILED') status = 500;
 
       return NextResponse.json({ success: false, error }, { status });

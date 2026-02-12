@@ -73,6 +73,7 @@ interface PositionMetrics {
   liquidatable: boolean;
   maxBorrowableAmount: number;
   maxWithdrawableAmount: number;
+  availableLiquidity: number;
 }
 
 interface BorrowerEvent {
@@ -285,6 +286,12 @@ export default function LendingPage() {
     if (!wallet || !selectedMarket) return;
     const amount = Number(borrowAmount);
     if (!Number.isFinite(amount) || amount <= 0) return;
+    if (metrics && amount > metrics.maxBorrowableAmount) {
+      toast.error(
+        `Borrow amount exceeds available limit (${metrics.maxBorrowableAmount.toFixed(4)} ${getTokenSymbol(selectedMarket.debtCurrency)})`
+      );
+      return;
+    }
 
     await withAction('borrow', async () => {
       const response = await fetch('/api/lending/borrow', {
@@ -305,7 +312,7 @@ export default function LendingPage() {
       toast.success('Borrow successful');
       await Promise.all([refreshBalances(), refreshPosition()]);
     });
-  }, [borrowAmount, refreshBalances, refreshPosition, selectedMarket, wallet, withAction]);
+  }, [borrowAmount, metrics, refreshBalances, refreshPosition, selectedMarket, wallet, withAction]);
 
   const handleRepay = useCallback(async () => {
     if (!wallet || !config || !selectedMarket) return;
@@ -602,6 +609,12 @@ export default function LendingPage() {
                   </TabsContent>
 
                   <TabsContent value="borrow" className="space-y-3">
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                      Vault-backed pool liquidity: {(metrics?.availableLiquidity ?? 0).toFixed(4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
+                    </p>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                      Max borrowable now: {(metrics?.maxBorrowableAmount ?? 0).toFixed(4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
+                    </p>
                     <div className="flex items-center gap-3">
                       <input
                         type="number"
@@ -610,7 +623,14 @@ export default function LendingPage() {
                         className="w-40 rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
                       />
                       <span className="text-sm text-zinc-600 dark:text-zinc-400">{getTokenSymbol(selectedMarket.debtCurrency)}</span>
-                      <Button onClick={handleBorrow} disabled={loading === 'borrow' || !debtTrustlineReady}>
+                      <Button
+                        onClick={handleBorrow}
+                        disabled={
+                          loading === 'borrow' ||
+                          !debtTrustlineReady ||
+                          (metrics ? Number(borrowAmount) > metrics.maxBorrowableAmount : false)
+                        }
+                      >
                         {loading === 'borrow' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowUpRight className="mr-2 h-4 w-4" />}
                         Borrow
                       </Button>

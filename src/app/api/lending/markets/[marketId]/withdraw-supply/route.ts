@@ -6,6 +6,8 @@ interface RouteContext {
   params: Promise<{ marketId: string }>;
 }
 
+const TX_HASH_REGEX = /^[A-F0-9]{64}$/i;
+
 function parseAmount(value: unknown): number {
   if (typeof value === 'number') {
     return value;
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { marketId } = await context.params;
     const body = await request.json();
-    const { userAddress, amount, idempotencyKey } = body;
+    const { userAddress, amount, txHash, idempotencyKey } = body;
 
     if (!marketId) {
       return NextResponse.json(
@@ -65,10 +67,31 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
+    if (!txHash || typeof txHash !== 'string') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'MISSING_TX_HASH', message: 'txHash is required' },
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!TX_HASH_REGEX.test(txHash)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'INVALID_TX_HASH', message: 'txHash must be a 64-character hex string' },
+        },
+        { status: 400 }
+      );
+    }
+
     const { result, error } = await processWithdrawSupply(
       userAddress,
       marketId,
       parsedAmount,
+      txHash,
       idempotencyKey
     );
 
@@ -76,8 +99,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       let status = 400;
       if (error.code === 'MARKET_NOT_FOUND') status = 404;
       if (error.code === 'NO_SUPPLY_POSITION') status = 404;
+      if (error.code === 'VAULT_NOT_CONFIGURED') status = 422;
       if (error.code === 'OPERATION_IN_PROGRESS') status = 409;
       if (error.code === 'IDEMPOTENCY_MISMATCH') status = 409;
+      if (error.code === 'TX_FAILED') status = 422;
+      if (error.code === 'NOT_VAULT_WITHDRAW') status = 422;
+      if (error.code === 'WRONG_VAULT') status = 422;
       if (error.code === 'INSUFFICIENT_POOL_LIQUIDITY') status = 422;
       if (error.code === 'WITHDRAW_SUPPLY_FAILED') status = 500;
 

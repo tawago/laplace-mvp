@@ -1,5 +1,4 @@
 'use client';
-'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -12,8 +11,11 @@ import { toast } from 'sonner';
 
 import {
   checkTrustLine,
+  getVaultShareBalance,
   getWalletFromSeed,
-  sendTokenToBackend,
+  submitVaultDeposit,
+  submitVaultWithdrawAllByShares,
+  submitVaultWithdraw,
   type TokenBalance,
   type WalletInfo,
 } from '@/lib/client/xrpl';
@@ -25,6 +27,9 @@ interface MarketConfig {
   name: string;
   debtCurrency: string;
   debtIssuer: string;
+  supplyVaultId: string | null;
+  supplyMptIssuanceId: string | null;
+  vaultScale: number;
   baseInterestRate: number;
   minSupplyAmount: number;
   reserveFactor: number;
@@ -57,7 +62,6 @@ interface SupplyPosition {
 }
 
 interface SupplyPositionMetrics {
-  accruedYield: number;
   withdrawableAmount: number;
   availableLiquidity: number;
   utilizationRate: number;
@@ -255,7 +259,12 @@ export default function LenderPage() {
   }, [refreshDashboard, selectedMarketId, wallet?.address, walletReady]);
 
   const handleSupply = useCallback(async () => {
-    if (!wallet || !walletReady || !config || !selectedMarket) return;
+    if (!wallet || !walletReady || !selectedMarket) return;
+
+    if (!selectedMarket.supplyVaultId) {
+      toast.error('Supply vault is not configured for this market yet');
+      return;
+    }
 
     const amount = Number(supplyAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -269,16 +278,21 @@ export default function LenderPage() {
 
     setLoadingAction('supply');
     try {
-      const sendResult = await sendTokenToBackend(
+      const sendResult = await submitVaultDeposit(
         wallet.seed,
-        config.backendAddress,
+        selectedMarket.supplyVaultId,
         selectedMarket.debtCurrency,
         amount.toString(),
-        selectedMarket.debtIssuer
+        selectedMarket.debtIssuer,
+        selectedMarket.vaultScale
       );
 
       if (sendResult.result !== 'tesSUCCESS') {
-        toast.error(`XRPL transfer failed: ${sendResult.result}`);
+        if (sendResult.result === 'tecPRECISION_LOSS') {
+          toast.error('Amount precision is too high for this vault. Try fewer decimal places.');
+          return;
+        }
+        toast.error(`Vault deposit failed: ${sendResult.result}`);
         return;
       }
 
@@ -305,7 +319,6 @@ export default function LenderPage() {
       setLoadingAction('');
     }
   }, [
-    config,
     refreshDashboard,
     selectedMarket,
     supplyAmount,
@@ -313,35 +326,13 @@ export default function LenderPage() {
     walletReady,
   ]);
 
-  const handleCollectYield = useCallback(async () => {
-    if (!wallet || !walletReady || !selectedMarket) return;
-    setLoadingAction('collect-yield');
-
-    try {
-      const response = await fetch(`/api/lending/markets/${selectedMarket.id}/collect-yield`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userAddress: wallet.address }),
-      });
-      const payload = await response.json();
-
-      if (!payload.success) {
-        toast.error(payload.error?.message ?? 'Collect yield failed');
-        return;
-      }
-
-      const txSummary = payload.data.txHash ? ` (${payload.data.txHash.slice(0, 10)}...)` : '';
-      toast.success(`Collected ${payload.data.collectedAmount} ${getTokenSymbol(selectedMarket.debtCurrency)}${txSummary}`);
-      await refreshDashboard();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Collect yield failed');
-    } finally {
-      setLoadingAction('');
-    }
-  }, [refreshDashboard, selectedMarket, wallet, walletReady]);
-
   const handleWithdrawSupply = useCallback(async () => {
     if (!wallet || !walletReady || !selectedMarket) return;
+
+    if (!selectedMarket.supplyVaultId) {
+      toast.error('Supply vault is not configured for this market yet');
+      return;
+    }
 
     const amount = Number(withdrawAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -351,10 +342,32 @@ export default function LenderPage() {
 
     setLoadingAction('withdraw-supply');
     try {
+      const sendResult = await submitVaultWithdraw(
+        wallet.seed,
+        selectedMarket.supplyVaultId,
+        selectedMarket.debtCurrency,
+        amount.toString(),
+        selectedMarket.debtIssuer,
+        selectedMarket.vaultScale
+      );
+
+      if (sendResult.result !== 'tesSUCCESS') {
+        if (sendResult.result === 'tecPRECISION_LOSS') {
+          toast.error('Vault could not represent this withdrawal exactly. Try a slightly smaller amount.');
+          return;
+        }
+        toast.error(`Vault withdraw failed: ${sendResult.result}`);
+        return;
+      }
+
       const response = await fetch(`/api/lending/markets/${selectedMarket.id}/withdraw-supply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userAddress: wallet.address, amount }),
+        body: JSON.stringify({
+          userAddress: wallet.address,
+          amount: sendResult.submittedAmount,
+          txHash: sendResult.hash,
+        }),
       });
       const payload = await response.json();
 
@@ -372,7 +385,56 @@ export default function LenderPage() {
     }
   }, [refreshDashboard, selectedMarket, wallet, walletReady, withdrawAmount]);
 
-  const canCollectYield = (positionMetrics?.accruedYield ?? 0) > 0;
+  const handleWithdrawAll = useCallback(async () => {
+    if (!wallet || !walletReady || !selectedMarket) return;
+    if (!selectedMarket.supplyVaultId || !selectedMarket.supplyMptIssuanceId) {
+      toast.error('Supply vault share config is missing for this market');
+      return;
+    }
+    if (!position || position.supplyAmount <= 0) {
+      toast.error('No active supplied position to withdraw');
+      return;
+    }
+
+    setLoadingAction('withdraw-all');
+    try {
+      const shareBalance = await getVaultShareBalance(wallet.address, selectedMarket.supplyMptIssuanceId);
+      const sendResult = await submitVaultWithdrawAllByShares(
+        wallet.seed,
+        selectedMarket.supplyVaultId,
+        selectedMarket.supplyMptIssuanceId,
+        shareBalance
+      );
+
+      if (sendResult.result !== 'tesSUCCESS') {
+        toast.error(`Full vault withdraw failed: ${sendResult.result}`);
+        return;
+      }
+
+      const response = await fetch(`/api/lending/markets/${selectedMarket.id}/withdraw-supply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userAddress: wallet.address,
+          amount: position.supplyAmount,
+          txHash: sendResult.hash,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!payload.success) {
+        toast.error(payload.error?.message ?? 'Full withdraw failed');
+        return;
+      }
+
+      toast.success(`Withdrawn full position (${payload.data.withdrawnAmount} ${getTokenSymbol(selectedMarket.debtCurrency)})`);
+      await refreshDashboard();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Full withdraw failed');
+    } finally {
+      setLoadingAction('');
+    }
+  }, [position, refreshDashboard, selectedMarket, wallet, walletReady]);
 
   if (pageLoading) {
     return (
@@ -413,7 +475,7 @@ export default function LenderPage() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Lender Dashboard</h1>
               <p className="mt-1 text-sm text-slate-600">
-                Supply {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : 'debt asset'} liquidity and manage yield on XRPL testnet.
+                Supply {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : 'debt asset'} liquidity through XRPL vaults.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -513,15 +575,15 @@ export default function LenderPage() {
                 <>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-xs text-slate-500">Principal</p>
+                      <p className="text-xs text-slate-500">Tracked Position</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
                         {formatAmount(position.supplyAmount, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
                       </p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-xs text-slate-500">Accrued Yield</p>
+                      <p className="text-xs text-slate-500">Position Status</p>
                       <p className="mt-1 text-lg font-semibold text-emerald-600">
-                        {formatAmount(positionMetrics.accruedYield, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
+                        {position.status}
                       </p>
                     </div>
                   </div>
@@ -554,7 +616,6 @@ export default function LenderPage() {
             <Tabs defaultValue="supply" className="w-full">
               <TabsList className="mb-6 !bg-slate-100">
                 <TabsTrigger value="supply" className="data-[state=active]:!bg-white data-[state=active]:!text-slate-900 !text-slate-600">Supply</TabsTrigger>
-                <TabsTrigger value="collect" className="data-[state=active]:!bg-white data-[state=active]:!text-slate-900 !text-slate-600">Collect Yield</TabsTrigger>
                 <TabsTrigger value="withdraw" className="data-[state=active]:!bg-white data-[state=active]:!text-slate-900 !text-slate-600">Withdraw</TabsTrigger>
               </TabsList>
 
@@ -585,26 +646,9 @@ export default function LenderPage() {
                 )}
               </TabsContent>
 
-              <TabsContent value="collect" className="space-y-4">
-                <p className="text-sm text-slate-600">
-                  Claim only accrued yield to your lender wallet.
-                </p>
-                <Button
-                  onClick={handleCollectYield}
-                  disabled={!walletReady || !canCollectYield || loadingAction === 'collect-yield'}
-                  className="bg-slate-900 text-white hover:bg-slate-800"
-                >
-                  {loadingAction === 'collect-yield' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Collect Yield
-                </Button>
-                {!canCollectYield && (
-                  <p className="text-xs text-slate-500">Yield collection is enabled once accrued yield is greater than zero.</p>
-                )}
-              </TabsContent>
-
               <TabsContent value="withdraw" className="space-y-4">
                 <p className="text-sm text-slate-600">
-                  Withdraw supplied principal while respecting pool liquidity constraints.
+                  Withdraw from your vault-backed supply while respecting pool liquidity constraints.
                 </p>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <input
@@ -624,7 +668,19 @@ export default function LenderPage() {
                     {loadingAction === 'withdraw-supply' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Withdraw Supply
                   </Button>
+                  <Button
+                    onClick={handleWithdrawAll}
+                    disabled={!walletReady || !position || position.supplyAmount <= 0 || loadingAction === 'withdraw-all'}
+                    variant="outline"
+                    className="border-rose-300 bg-white text-rose-700 hover:bg-rose-50"
+                  >
+                    {loadingAction === 'withdraw-all' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Withdraw Full Position
+                  </Button>
                 </div>
+                <p className="text-xs text-slate-500">
+                  Full position withdraw redeems all vault shares and avoids asset precision mismatch.
+                </p>
               </TabsContent>
             </Tabs>
           </CardContent>

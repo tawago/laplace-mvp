@@ -8,6 +8,13 @@
       "when": 1770739979979,
       "tag": "0000_married_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776018000000,
+      "tag": "0001_sudden_vault_columns",
+      "breakpoints": true
     }
   ]
 }

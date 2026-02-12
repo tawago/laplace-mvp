@@ -5,7 +5,7 @@
  * Uses Drizzle ORM for idempotent market and price oracle upserts.
  *
  * Prerequisites:
- * - DATABASE_URL must be set in .env.local (Neon connection string)
+ * - DATABASE_URL must be set in .env.local (testnet) or .env.devnet (devnet)
  * - ISSUER_ADDRESS must be set (from setup-testnet.ts)
  *
  * Run with: npx tsx scripts/init-db.ts
@@ -14,14 +14,24 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
+const isDevnet = process.argv.includes('--devnet');
+const selectedNetwork = isDevnet ? 'devnet' : 'testnet';
+
 // Load environment variables from .env.local BEFORE importing db
 dotenv.config({ path: path.join(process.cwd(), '.env.local') });
+if (isDevnet) {
+  dotenv.config({ path: path.join(process.cwd(), '.env.devnet'), override: true });
+}
+
+if (!process.env.NEXT_PUBLIC_XRPL_NETWORK) {
+  process.env.NEXT_PUBLIC_XRPL_NETWORK = selectedNetwork;
+}
 
 // Validate required env vars before importing db module
 if (!process.env.DATABASE_URL) {
-  console.error('Error: DATABASE_URL not found in environment.');
+  console.error(`Error: DATABASE_URL not found for ${selectedNetwork}.`);
   console.log('');
-  console.log('Please configure your Neon database connection string in .env.local:');
+  console.log('Please configure DATABASE_URL in your env file:');
   console.log('DATABASE_URL=postgres://user:pass@host/database?sslmode=require');
   console.log('');
   console.log('Get your connection string from: https://console.neon.tech/');
@@ -34,11 +44,26 @@ if (!process.env.ISSUER_ADDRESS) {
   process.exit(1);
 }
 
+if (!process.env.BACKEND_WALLET_SEED) {
+  console.error('Error: BACKEND_WALLET_SEED not found in environment.');
+  console.log('Please run setup-testnet.ts first to create wallets.');
+  process.exit(1);
+}
+
 async function main() {
-  const { seedMarket, getMarketByName, getMarketPrices } = await import('../src/lib/db/seed');
+  const {
+    seedMarket,
+    getMarketByName,
+    getMarketPrices,
+    getAllActiveMarkets,
+    setMarketSupplyVaultConfig,
+  } = await import('../src/lib/db/seed');
+  const { getBackendWallet } = await import('../src/lib/xrpl/wallet');
+  const { getClient } = await import('../src/lib/xrpl/client');
+  const { checkVaultSupport, createSupplyVault } = await import('../src/lib/xrpl/vault');
 
   console.log('='.repeat(60));
-  console.log('Database Initialization (Neon + Drizzle)');
+  console.log(`Database Initialization (Neon + Drizzle / ${selectedNetwork})`);
   console.log('='.repeat(60));
   console.log();
 
@@ -76,12 +101,43 @@ async function main() {
       console.log();
     }
 
+    console.log('Provisioning supply vaults...');
+    const client = await getClient();
+    const support = await checkVaultSupport(client);
+    if (!support.enabled) {
+      throw new Error(support.reason || 'Vault support is not enabled on connected XRPL network');
+    }
+
+    const backendWallet = getBackendWallet();
+    const activeMarkets = await getAllActiveMarkets();
+    for (const market of activeMarkets) {
+      if (market.supply_vault_id && market.supply_mpt_issuance_id) {
+        console.log(`- ${market.name}: existing vault ${market.supply_vault_id}`);
+        continue;
+      }
+
+      const createdVault = await createSupplyVault(backendWallet, {
+        currency: market.debt_currency,
+        issuer: market.debt_issuer,
+        scale: market.vault_scale ?? 6,
+      });
+
+      await setMarketSupplyVaultConfig(market.id, {
+        vaultId: createdVault.vaultId,
+        mptIssuanceId: createdVault.mptIssuanceId,
+        vaultScale: market.vault_scale ?? 6,
+      });
+
+      console.log(`- ${market.name}: created vault ${createdVault.vaultId}`);
+    }
+    console.log();
+
     console.log('='.repeat(60));
     console.log('Database initialization complete!');
     console.log('='.repeat(60));
     console.log();
     console.log('You can now start the dev server:');
-    console.log('  npm run dev');
+    console.log(`  npm run ${isDevnet ? 'dev:devnet' : 'dev'}`);
   } catch (error) {
     console.error('Error initializing database:', error);
     process.exit(1);

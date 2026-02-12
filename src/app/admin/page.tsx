@@ -195,7 +195,7 @@ export default function AdminPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Admin Wallet Tools</h1>
           <p className="mt-2 text-sm text-slate-600">
-            This page is only for local testnet setup. Wallet seed is persisted in localStorage.
+            This page is for local XRPL setup (testnet/devnet). Wallet seed is persisted in localStorage.
           </p>
         </div>
 

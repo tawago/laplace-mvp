@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { db, supplyPositions, users, SupplyPosition as DbSupplyPosition } from '../db';
 import { getOrCreateUser } from '../db/seed';
-import { calculateAccruedSupplyYield, deriveYieldIndexFromAccrued } from './calculations';
+import { calculateAccruedSupplyYield } from './calculations';
 import { SupplyPosition } from './types';
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_DOWN });
@@ -157,7 +157,7 @@ export async function checkpointSupplyYield(
 export async function addSupply(
   positionId: string,
   amount: number,
-  globalYieldIndex: number,
+  _globalYieldIndex: number,
   database: DbClient = db
 ): Promise<SupplyPosition> {
   validatePositiveAmount(amount);
@@ -167,17 +167,7 @@ export async function addSupply(
     throw new Error('Supply position not found');
   }
 
-  const currentAccruedYield = calculateAccruedSupplyYield(
-    position.supplyAmount,
-    globalYieldIndex,
-    position.yieldIndex
-  );
   const nextSupplyAmount = toTokenAmount(new Decimal(position.supplyAmount).add(amount));
-  const nextYieldIndex = deriveYieldIndexFromAccrued(
-    globalYieldIndex,
-    nextSupplyAmount,
-    currentAccruedYield
-  );
   const now = new Date();
 
   const [updated] = await database
@@ -185,7 +175,6 @@ export async function addSupply(
     .set({
       status: 'ACTIVE',
       supplyAmount: nextSupplyAmount.toString(),
-      yieldIndex: toIndexValue(nextYieldIndex).toString(),
       lastYieldUpdate: now,
       updatedAt: now,
     })
@@ -202,7 +191,7 @@ export async function addSupply(
 export async function removeSupply(
   positionId: string,
   amount: number,
-  globalYieldIndex: number,
+  _globalYieldIndex: number,
   database: DbClient = db
 ): Promise<SupplyPosition> {
   validatePositiveAmount(amount);
@@ -223,25 +212,15 @@ export async function removeSupply(
     throw new Error('Insufficient supplied balance');
   }
 
-  const currentAccruedYield = calculateAccruedSupplyYield(
-    position.supplyAmount,
-    globalYieldIndex,
-    position.yieldIndex
-  );
   const nextSupplyDec = currentSupplyDec.sub(amountDec);
   const now = new Date();
 
   if (nextSupplyDec.isZero()) {
-    if (new Decimal(currentAccruedYield).gt(0)) {
-      throw new Error('Collect accrued yield before withdrawing full principal');
-    }
-
     const [closed] = await database
       .update(supplyPositions)
       .set({
         status: 'CLOSED',
         supplyAmount: '0',
-        yieldIndex: toIndexValue(globalYieldIndex).toString(),
         lastYieldUpdate: now,
         closedAt: now,
         updatedAt: now,
@@ -257,17 +236,11 @@ export async function removeSupply(
   }
 
   const nextSupplyAmount = toTokenAmount(nextSupplyDec);
-  const nextYieldIndex = deriveYieldIndexFromAccrued(
-    globalYieldIndex,
-    nextSupplyAmount,
-    currentAccruedYield
-  );
 
   const [updated] = await database
     .update(supplyPositions)
     .set({
       supplyAmount: nextSupplyAmount.toString(),
-      yieldIndex: toIndexValue(nextYieldIndex).toString(),
       lastYieldUpdate: now,
       updatedAt: now,
     })

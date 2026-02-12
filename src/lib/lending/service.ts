@@ -7,6 +7,7 @@
  */
 
 import Decimal from 'decimal.js';
+import { eq } from 'drizzle-orm';
 import { getClient } from '../xrpl/client';
 import { getBackendWallet, getIssuerAddress, getBackendAddress } from '../xrpl/wallet';
 import {
@@ -16,6 +17,7 @@ import {
   type TransactionVerification,
 } from '../xrpl/tokens';
 import { getMarketById, getMarketPrices } from '../db/seed';
+import { db, markets } from '../db';
 import { upsertOnchainTransaction, isTransactionProcessed } from './onchain';
 import {
   emitAppEvent,
@@ -44,21 +46,16 @@ import {
   allocateRepayment,
   calculateLiquidationCollateral,
   calculateTotalDebt,
-  calculateAccruedSupplyYield,
 } from './calculations';
 import {
   addToTotalBorrowed,
   getAvailableLiquidity,
   getPoolMetrics,
   removeFromTotalBorrowed,
-  addToTotalSupplied,
-  removeFromTotalSupplied,
   updateGlobalYieldIndex,
 } from './pool';
 import {
   addSupply,
-  accrueSupplyYield,
-  checkpointSupplyYield,
   getOrCreateSupplyPosition,
   getSupplyPositionForUser,
   removeSupply,
@@ -81,6 +78,11 @@ import {
   PoolMetrics,
 } from './types';
 import { getTokenCode } from '../xrpl/currency-codes';
+import {
+  checkVaultSupport,
+  createSupplyVault,
+  getSupplierShareBalance,
+} from '../xrpl/vault';
 
 export interface LendingServiceError {
   code: string;
@@ -105,6 +107,84 @@ function normalizeCurrencyCode(currency: string): string {
 
 function isExpectedCurrency(actual: string, expected: string): boolean {
   return normalizeCurrencyCode(actual) === normalizeCurrencyCode(expected);
+}
+
+function extractVaultIdFromRawTx(rawTx: Record<string, unknown> | null | undefined): string | null {
+  if (!rawTx) return null;
+
+  const direct = rawTx.VaultID;
+  if (typeof direct === 'string' && direct.length > 0) {
+    return direct;
+  }
+
+  const alt = rawTx.VaultId;
+  if (typeof alt === 'string' && alt.length > 0) {
+    return alt;
+  }
+
+  return null;
+}
+
+function extractMptIssuanceIdFromRawAmount(rawTx: Record<string, unknown> | null | undefined): string | null {
+  if (!rawTx) return null;
+  const amount = rawTx.Amount;
+  if (!amount || typeof amount !== 'object') return null;
+
+  const record = amount as Record<string, unknown>;
+  const direct = record.mpt_issuance_id;
+  if (typeof direct === 'string' && direct.length > 0) return direct;
+
+  const alt1 = record.MPTokenIssuanceID;
+  if (typeof alt1 === 'string' && alt1.length > 0) return alt1;
+
+  const alt2 = record.MPTokenIssuanceId;
+  if (typeof alt2 === 'string' && alt2.length > 0) return alt2;
+
+  return null;
+}
+
+function extractTransactionResult(
+  rawMeta: Record<string, unknown> | null | undefined
+): string | null {
+  if (!rawMeta) return null;
+  const value = rawMeta.TransactionResult;
+  return typeof value === 'string' ? value : null;
+}
+
+async function ensureMarketSupplyVaultConfigured(market: MarketRecord): Promise<MarketRecord> {
+  if (market.supply_vault_id && market.supply_mpt_issuance_id) {
+    return market;
+  }
+
+  const client = await getClient();
+  const support = await checkVaultSupport(client);
+  if (!support.enabled) {
+    throw new Error(support.reason || 'XRPL vault support is not enabled on this network');
+  }
+
+  const backendWallet = getBackendWallet();
+  const created = await createSupplyVault(backendWallet, {
+    currency: market.debt_currency,
+    issuer: market.debt_issuer,
+    scale: market.vault_scale,
+  });
+
+  const now = new Date();
+  await db
+    .update(markets)
+    .set({
+      supplyVaultId: created.vaultId,
+      supplyMptIssuanceId: created.mptIssuanceId,
+      updatedAt: now,
+    })
+    .where(eq(markets.id, market.id));
+
+  const refreshed = await getMarketById(market.id);
+  if (!refreshed) {
+    throw new Error('Market not found after vault provisioning');
+  }
+
+  return refreshed;
 }
 
 function reconstructResult<T>(event: AppEventRow): T | null {
@@ -184,6 +264,9 @@ function mapMarketRecordToDomain(market: MarketRecord): Market {
     minCollateralAmount: market.min_collateral_amount,
     minBorrowAmount: market.min_borrow_amount,
     minSupplyAmount: market.min_supply_amount,
+    supplyVaultId: market.supply_vault_id,
+    supplyMptIssuanceId: market.supply_mpt_issuance_id,
+    vaultScale: market.vault_scale,
     totalSupplied: market.total_supplied,
     totalBorrowed: market.total_borrowed,
     globalYieldIndex: market.global_yield_index,
@@ -1030,20 +1113,30 @@ export async function getPositionWithMetrics(
   }
 
   const marketData = mapMarketRecordToDomain(market);
+  const pool = await getPoolMetrics(marketId);
+  if (!pool) {
+    return null;
+  }
 
-  const metrics = calculatePositionMetrics(
+  const baseMetrics = calculatePositionMetrics(
     position,
     marketData,
     prices.collateralPriceUsd,
     prices.debtPriceUsd
   );
 
+  const metrics: PositionMetrics = {
+    ...baseMetrics,
+    maxBorrowableAmount: Math.min(baseMetrics.maxBorrowableAmount, pool.availableLiquidity),
+    availableLiquidity: pool.availableLiquidity,
+  };
+
   return { position, metrics, market: marketData };
 }
 
 function buildSupplyPositionMetrics(position: SupplyPosition, pool: PoolMetrics): SupplyPositionMetrics {
-  const accruedYield = toAmount(accrueSupplyYield(position, pool.globalYieldIndex));
-  const withdrawableAmount = toAmount(new Decimal(position.supplyAmount).add(accruedYield));
+  const accruedYield = 0;
+  const withdrawableAmount = toAmount(position.supplyAmount);
 
   return {
     accruedYield,
@@ -1064,9 +1157,21 @@ export async function processSupply(
   marketId: string,
   idempotencyKey?: string
 ): Promise<{ result?: SupplyResult; error?: LendingServiceError }> {
-  const market = await getMarketById(marketId);
-  if (!market) {
+  const marketRow = await getMarketById(marketId);
+  if (!marketRow) {
     return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
+  }
+
+  let market: MarketRecord;
+  try {
+    market = await ensureMarketSupplyVaultConfigured(marketRow);
+  } catch (error) {
+    return {
+      error: createError(
+        'VAULT_NOT_CONFIGURED',
+        error instanceof Error ? error.message : 'Supply vault is not configured'
+      ),
+    };
   }
 
   let event: AppEventRow;
@@ -1135,27 +1240,45 @@ export async function processSupply(
   try {
     const client = await getClient();
     const tx = await verifyTransaction(client, txHash);
+    const txResult = extractTransactionResult(tx.rawMeta);
 
     if (!tx.validated) {
       await updateEventStatus(event.id, 'FAILED', { code: 'TX_NOT_VALIDATED', message: 'Transaction not validated' });
       return { error: createError('TX_NOT_VALIDATED', 'Transaction not yet validated') };
     }
 
-    if (tx.transactionType !== 'Payment') {
+    if (txResult !== 'tesSUCCESS') {
       await updateEventStatus(event.id, 'FAILED', {
-        code: 'NOT_PAYMENT',
-        message: `Expected Payment, got ${tx.transactionType}`,
+        code: 'TX_FAILED',
+        message: `Vault deposit failed on-ledger (${txResult ?? 'unknown'})`,
       });
-      return { error: createError('NOT_PAYMENT', `Expected Payment, got ${tx.transactionType}`) };
+      return {
+        error: createError('TX_FAILED', `Vault deposit failed on-ledger (${txResult ?? 'unknown'})`),
+      };
     }
 
-    const backendAddress = getBackendAddress();
-    if (tx.destination !== backendAddress) {
+    if (tx.transactionType !== 'VaultDeposit') {
       await updateEventStatus(event.id, 'FAILED', {
-        code: 'WRONG_DESTINATION',
-        message: `Transaction must be sent to ${backendAddress}`,
+        code: 'NOT_VAULT_DEPOSIT',
+        message: `Expected VaultDeposit, got ${tx.transactionType}`,
       });
-      return { error: createError('WRONG_DESTINATION', `Transaction must be sent to ${backendAddress}`) };
+      return {
+        error: createError('NOT_VAULT_DEPOSIT', `Expected VaultDeposit, got ${tx.transactionType}`),
+      };
+    }
+
+    const vaultId = extractVaultIdFromRawTx(tx.rawTx);
+    if (!vaultId || vaultId !== market.supply_vault_id) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_VAULT',
+        message: `Transaction must target configured vault ${market.supply_vault_id}`,
+      });
+      return {
+        error: createError(
+          'WRONG_VAULT',
+          `Transaction must target configured vault ${market.supply_vault_id}`
+        ),
+      };
     }
 
     if (!tx.amount) {
@@ -1215,25 +1338,20 @@ export async function processSupply(
       validated: tx.validated,
       txType: tx.transactionType,
       sourceAddress: tx.source,
-      destinationAddress: tx.destination,
+      destinationAddress: market.supply_vault_id,
       currency: tx.amount.currency,
       issuer: tx.amount.issuer,
       amount,
       rawTxJson: {
         ...buildInboundRawTxJson(tx),
-        operation: 'SUPPLY',
+        operation: 'VAULT_DEPOSIT',
+        vaultId: market.supply_vault_id,
       },
       rawMetaJson: tx.rawMeta || null,
     });
 
-    const { globalYieldIndex } = await updateGlobalYieldIndex(marketId);
-    const supplyPosition = await getOrCreateSupplyPosition(
-      senderAddress,
-      marketId,
-      globalYieldIndex
-    );
-    const updatedSupplyPosition = await addSupply(supplyPosition.id, amount, globalYieldIndex);
-    await addToTotalSupplied(marketId, amount);
+    const supplyPosition = await getOrCreateSupplyPosition(senderAddress, marketId, 1);
+    const updatedSupplyPosition = await addSupply(supplyPosition.id, amount, 1);
 
     const supplyResult: SupplyResult = {
       marketId,
@@ -1259,6 +1377,7 @@ export async function processSupply(
       payload: {
         txHash,
         supplyPositionId: updatedSupplyPosition.id,
+        vaultId: market.supply_vault_id,
       },
     });
 
@@ -1274,192 +1393,20 @@ export async function processSupply(
  * Collect accrued supplier yield and transfer to lender wallet.
  */
 export async function processCollectYield(
-  userAddress: string,
-  marketId: string,
-  idempotencyKey?: string
+  _userAddress: string,
+  _marketId: string,
+  _idempotencyKey?: string
 ): Promise<{ result?: CollectYieldResult; error?: LendingServiceError }> {
-  const market = await getMarketById(marketId);
-  if (!market) {
-    return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
-  }
+  void _userAddress;
+  void _marketId;
+  void _idempotencyKey;
 
-  let event: AppEventRow;
-
-  if (idempotencyKey) {
-    const acquireResult = await acquireIdempotencyKey({
-      eventType: LENDING_EVENTS.COLLECT_YIELD_INITIATED,
-      module: 'LENDING',
-      status: 'PENDING',
-      userAddress,
-      marketId,
-      idempotencyKey,
-      currency: market.debt_currency,
-      payload: {},
-    });
-
-    if (!acquireResult.acquired) {
-      const existingEvent = acquireResult.event;
-
-      if (!validateIdempotencyIdentity(existingEvent, {
-        eventType: LENDING_EVENTS.COLLECT_YIELD_INITIATED,
-        userAddress,
-        marketId,
-      })) {
-        return { error: createError('IDEMPOTENCY_MISMATCH', 'Idempotency key used for different operation') };
-      }
-
-      if (acquireResult.status === 'COMPLETED') {
-        const storedResult = reconstructResult<CollectYieldResult>(existingEvent);
-        if (storedResult) {
-          return { result: storedResult };
-        }
-
-        return { error: createError('ALREADY_COMPLETED', 'Operation completed but result unavailable') };
-      }
-
-      if (acquireResult.status === 'PENDING') {
-        return { error: createError('OPERATION_IN_PROGRESS', 'Operation already in progress') };
-      }
-
-      event = existingEvent;
-      await updateEventStatus(event.id, 'PENDING');
-    } else {
-      event = acquireResult.event;
-    }
-  } else {
-    event = await emitAppEvent({
-      eventType: LENDING_EVENTS.COLLECT_YIELD_INITIATED,
-      module: 'LENDING',
-      status: 'PENDING',
-      userAddress,
-      marketId,
-      currency: market.debt_currency,
-    });
-  }
-
-  const position = await getSupplyPositionForUser(userAddress, marketId);
-  if (!position) {
-    await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
-    return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
-  }
-
-  try {
-    const { globalYieldIndex } = await updateGlobalYieldIndex(marketId);
-    const refreshedPosition = await getSupplyPositionForUser(userAddress, marketId);
-
-    if (!refreshedPosition) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
-      return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
-    }
-
-    const accruedYield = toAmount(calculateAccruedSupplyYield(
-      refreshedPosition.supplyAmount,
-      globalYieldIndex,
-      refreshedPosition.yieldIndex
-    ));
-
-    if (accruedYield <= 0) {
-      const zeroResult: CollectYieldResult = {
-        marketId,
-        supplyPositionId: refreshedPosition.id,
-        collectedAmount: 0,
-        txHash: null,
-      };
-
-      await checkpointSupplyYield(refreshedPosition.id, globalYieldIndex);
-
-      if (idempotencyKey) {
-        await completeIdempotencyEvent(event.id, { result: zeroResult });
-      } else {
-        await updateEventStatus(event.id, 'COMPLETED');
-      }
-
-      await emitAppEvent({
-        eventType: LENDING_EVENTS.COLLECT_YIELD_COMPLETED,
-        module: 'LENDING',
-        status: 'COMPLETED',
-        userAddress,
-        marketId,
-        amount: 0,
-        currency: market.debt_currency,
-        payload: { txHash: null, supplyPositionId: refreshedPosition.id },
-      });
-
-      return { result: zeroResult };
-    }
-
-    const client = await getClient();
-    const backendWallet = getBackendWallet();
-    const tx = await sendToken(
-      client,
-      backendWallet,
-      userAddress,
-      market.debt_currency,
-      accruedYield.toString(),
-      market.debt_issuer
-    );
-
-    if (tx.result !== 'tesSUCCESS') {
-      await updateEventStatus(event.id, 'FAILED', { code: 'TX_FAILED', message: tx.result });
-      return { error: createError('TX_FAILED', `Failed to send tokens: ${tx.result}`) };
-    }
-
-    const onchainTx = await upsertOnchainTransaction({
-      txHash: tx.hash,
-      validated: true,
-      txType: tx.transactionType ?? 'Payment',
-      sourceAddress: backendWallet.address,
-      destinationAddress: userAddress,
-      currency: market.debt_currency,
-      issuer: market.debt_issuer,
-      amount: accruedYield,
-      rawTxJson: {
-        ...buildOutboundRawTxJson({
-          tx,
-          sourceAddress: backendWallet.address,
-          destinationAddress: userAddress,
-          currency: market.debt_currency,
-          issuer: market.debt_issuer,
-          amount: accruedYield,
-        }),
-        operation: 'COLLECT_YIELD',
-      },
-      rawMetaJson: tx.rawMeta || null,
-    });
-
-    await checkpointSupplyYield(refreshedPosition.id, globalYieldIndex);
-
-    const collectResult: CollectYieldResult = {
-      marketId,
-      supplyPositionId: refreshedPosition.id,
-      collectedAmount: accruedYield,
-      txHash: tx.hash,
-    };
-
-    if (idempotencyKey) {
-      await completeIdempotencyEvent(event.id, { result: collectResult });
-    } else {
-      await updateEventStatus(event.id, 'COMPLETED');
-    }
-
-    await emitAppEvent({
-      eventType: LENDING_EVENTS.COLLECT_YIELD_COMPLETED,
-      module: 'LENDING',
-      status: 'COMPLETED',
-      userAddress,
-      marketId,
-      onchainTxId: onchainTx.id,
-      amount: accruedYield,
-      currency: market.debt_currency,
-      payload: { txHash: tx.hash, supplyPositionId: refreshedPosition.id },
-    });
-
-    return { result: collectResult };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    await updateEventStatus(event.id, 'FAILED', { code: 'COLLECT_YIELD_FAILED', message });
-    return { error: createError('COLLECT_YIELD_FAILED', message) };
-  }
+  return {
+    error: createError(
+      'UNSUPPORTED_OPERATION',
+      'Yield is realized via vault share redemption. Use withdraw supply instead.'
+    ),
+  };
 }
 
 /**
@@ -1469,15 +1416,28 @@ export async function processWithdrawSupply(
   userAddress: string,
   marketId: string,
   amount: number,
+  txHash: string,
   idempotencyKey?: string
 ): Promise<{ result?: WithdrawSupplyResult; error?: LendingServiceError }> {
   if (!Number.isFinite(amount) || amount <= 0) {
     return { error: createError('INVALID_AMOUNT', 'Amount must be a positive number') };
   }
 
-  const market = await getMarketById(marketId);
-  if (!market) {
+  const marketRow = await getMarketById(marketId);
+  if (!marketRow) {
     return { error: createError('MARKET_NOT_FOUND', 'Market not found or inactive') };
+  }
+
+  let market: MarketRecord;
+  try {
+    market = await ensureMarketSupplyVaultConfigured(marketRow);
+  } catch (error) {
+    return {
+      error: createError(
+        'VAULT_NOT_CONFIGURED',
+        error instanceof Error ? error.message : 'Supply vault is not configured'
+      ),
+    };
   }
 
   let event: AppEventRow;
@@ -1536,104 +1496,183 @@ export async function processWithdrawSupply(
     });
   }
 
-  const position = await getSupplyPositionForUser(userAddress, marketId);
-  if (!position) {
-    await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
-    return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
+  if (await isTransactionProcessed(txHash)) {
+    await updateEventStatus(event.id, 'FAILED', {
+      code: 'TX_ALREADY_PROCESSED',
+      message: 'This transaction has already been processed',
+    });
+    return { error: createError('TX_ALREADY_PROCESSED', 'This transaction has already been processed') };
   }
 
   try {
-    const { globalYieldIndex } = await updateGlobalYieldIndex(marketId);
-    const refreshedPosition = await getSupplyPositionForUser(userAddress, marketId);
-    if (!refreshedPosition) {
-      await updateEventStatus(event.id, 'FAILED', { code: 'NO_SUPPLY_POSITION', message: 'No active supply position found' });
-      return { error: createError('NO_SUPPLY_POSITION', 'No active supply position found') };
+    const client = await getClient();
+    const tx = await verifyTransaction(client, txHash);
+    const txResult = extractTransactionResult(tx.rawMeta);
+
+    if (!tx.validated) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'TX_NOT_VALIDATED', message: 'Transaction not validated' });
+      return { error: createError('TX_NOT_VALIDATED', 'Transaction not yet validated') };
     }
 
-    const accruedYield = toAmount(calculateAccruedSupplyYield(
-      refreshedPosition.supplyAmount,
-      globalYieldIndex,
-      refreshedPosition.yieldIndex
-    ));
-
-    if (amount > refreshedPosition.supplyAmount) {
+    if (txResult !== 'tesSUCCESS') {
       await updateEventStatus(event.id, 'FAILED', {
-        code: 'EXCEEDS_SUPPLIED_PRINCIPAL',
-        message: 'Withdraw amount exceeds supplied principal',
+        code: 'TX_FAILED',
+        message: `Vault withdraw failed on-ledger (${txResult ?? 'unknown'})`,
       });
-      return { error: createError('EXCEEDS_SUPPLIED_PRINCIPAL', 'Withdraw amount exceeds supplied principal') };
+      return {
+        error: createError('TX_FAILED', `Vault withdraw failed on-ledger (${txResult ?? 'unknown'})`),
+      };
     }
 
-    if (amount === refreshedPosition.supplyAmount && accruedYield > 0) {
+    if (tx.transactionType !== 'VaultWithdraw') {
       await updateEventStatus(event.id, 'FAILED', {
-        code: 'COLLECT_YIELD_FIRST',
-        message: 'Collect accrued yield before withdrawing full principal',
+        code: 'NOT_VAULT_WITHDRAW',
+        message: `Expected VaultWithdraw, got ${tx.transactionType}`,
+      });
+      return {
+        error: createError('NOT_VAULT_WITHDRAW', `Expected VaultWithdraw, got ${tx.transactionType}`),
+      };
+    }
+
+    const vaultId = extractVaultIdFromRawTx(tx.rawTx);
+    if (!vaultId || vaultId !== market.supply_vault_id) {
+      await updateEventStatus(event.id, 'FAILED', {
+        code: 'WRONG_VAULT',
+        message: `Transaction must target configured vault ${market.supply_vault_id}`,
       });
       return {
         error: createError(
-          'COLLECT_YIELD_FIRST',
-          'Collect accrued yield before withdrawing full principal'
+          'WRONG_VAULT',
+          `Transaction must target configured vault ${market.supply_vault_id}`
         ),
       };
     }
 
-    const availableLiquidity = await getAvailableLiquidity(marketId);
-    if (amount > availableLiquidity) {
-      await updateEventStatus(event.id, 'FAILED', {
-        code: 'INSUFFICIENT_POOL_LIQUIDITY',
-        message: 'Insufficient pool liquidity',
-      });
-      return { error: createError('INSUFFICIENT_POOL_LIQUIDITY', 'Insufficient pool liquidity') };
+    if (tx.source !== userAddress) {
+      await updateEventStatus(event.id, 'FAILED', { code: 'SENDER_MISMATCH', message: 'Sender mismatch' });
+      return { error: createError('SENDER_MISMATCH', 'Transaction sender does not match') };
     }
 
-    const client = await getClient();
-    const backendWallet = getBackendWallet();
-    const tx = await sendToken(
-      client,
-      backendWallet,
-      userAddress,
-      market.debt_currency,
-      amount.toString(),
-      market.debt_issuer
-    );
+    const mptIssuanceId = extractMptIssuanceIdFromRawAmount(tx.rawTx);
+    const shareRedeemMode = Boolean(mptIssuanceId);
 
-    if (tx.result !== 'tesSUCCESS') {
-      await updateEventStatus(event.id, 'FAILED', { code: 'TX_FAILED', message: tx.result });
-      return { error: createError('TX_FAILED', `Failed to send tokens: ${tx.result}`) };
+    if (shareRedeemMode) {
+      if (!market.supply_mpt_issuance_id) {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'MPT_NOT_CONFIGURED',
+          message: 'Market does not have a configured supply MPT issuance',
+        });
+        return {
+          error: createError('MPT_NOT_CONFIGURED', 'Market does not have a configured supply MPT issuance'),
+        };
+      }
+
+      if (mptIssuanceId !== market.supply_mpt_issuance_id) {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'WRONG_MPT_ISSUANCE',
+          message: `Expected MPT issuance ${market.supply_mpt_issuance_id}, got ${mptIssuanceId}`,
+        });
+        return {
+          error: createError(
+            'WRONG_MPT_ISSUANCE',
+            `Expected MPT issuance ${market.supply_mpt_issuance_id}, got ${mptIssuanceId}`
+          ),
+        };
+      }
+    } else {
+      if (!tx.amount) {
+        await updateEventStatus(event.id, 'FAILED', { code: 'NO_AMOUNT', message: 'Could not determine amount' });
+        return { error: createError('NO_AMOUNT', 'Could not determine transaction amount') };
+      }
+
+      if (!isExpectedCurrency(tx.amount.currency, market.debt_currency)) {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'WRONG_CURRENCY',
+          message: `Expected ${market.debt_currency}, got ${tx.amount.currency}`,
+        });
+        return {
+          error: createError('WRONG_CURRENCY', `Expected ${market.debt_currency}, got ${tx.amount.currency}`),
+        };
+      }
+
+      if (tx.amount.currency !== 'XRP' && tx.amount.issuer !== market.debt_issuer) {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'WRONG_ISSUER',
+          message: `Expected issuer ${market.debt_issuer}, got ${tx.amount.issuer}`,
+        });
+        return {
+          error: createError('WRONG_ISSUER', `Expected issuer ${market.debt_issuer}, got ${tx.amount.issuer}`),
+        };
+      }
+
+      const txAmount = toAmount(tx.amount.value);
+      if (Math.abs(txAmount - amount) > 0.00000001) {
+        await updateEventStatus(event.id, 'FAILED', {
+          code: 'AMOUNT_MISMATCH',
+          message: `Requested amount ${amount} does not match transaction amount ${txAmount}`,
+        });
+        return {
+          error: createError(
+            'AMOUNT_MISMATCH',
+            `Requested amount ${amount} does not match transaction amount ${txAmount}`
+          ),
+        };
+      }
     }
+
+    const effectiveWithdrawAmount = shareRedeemMode ? amount : toAmount(tx.amount?.value ?? amount);
 
     const onchainTx = await upsertOnchainTransaction({
-      txHash: tx.hash,
-      validated: true,
-      txType: tx.transactionType ?? 'Payment',
-      sourceAddress: backendWallet.address,
-      destinationAddress: userAddress,
-      currency: market.debt_currency,
-      issuer: market.debt_issuer,
-      amount,
+      txHash,
+      validated: tx.validated,
+      txType: tx.transactionType,
+      sourceAddress: tx.source,
+      destinationAddress: market.supply_vault_id,
+      currency: tx.amount?.currency || market.debt_currency,
+      issuer: tx.amount?.issuer || market.debt_issuer,
+      amount: effectiveWithdrawAmount,
       rawTxJson: {
-        ...buildOutboundRawTxJson({
-          tx,
-          sourceAddress: backendWallet.address,
-          destinationAddress: userAddress,
-          currency: market.debt_currency,
-          issuer: market.debt_issuer,
-          amount,
-        }),
-        operation: 'WITHDRAW_SUPPLY',
+        ...buildInboundRawTxJson(tx),
+        operation: 'VAULT_WITHDRAW',
+        vaultId: market.supply_vault_id,
+        withdrawMode: shareRedeemMode ? 'SHARES' : 'ASSETS',
       },
       rawMetaJson: tx.rawMeta || null,
     });
 
-    const updatedPosition = await removeSupply(refreshedPosition.id, amount, globalYieldIndex);
-    await removeFromTotalSupplied(marketId, amount);
+    const trackedPosition = await getSupplyPositionForUser(userAddress, marketId);
+    let supplyPositionId = trackedPosition?.id ?? `onchain:${marketId}:${userAddress}`;
+    let remainingSupply = 0;
+
+    if (market.supply_mpt_issuance_id) {
+      const shareScale = Math.max(0, market.vault_scale ?? 6);
+      const remainingShares = await getSupplierShareBalance(
+        client,
+        userAddress,
+        market.supply_mpt_issuance_id
+      );
+      remainingSupply = toAmount(
+        new Decimal(remainingShares.shares).div(new Decimal(10).pow(shareScale))
+      );
+    }
+
+    if (trackedPosition) {
+      const delta = Math.min(effectiveWithdrawAmount, trackedPosition.supplyAmount);
+      if (delta > 0) {
+        const updatedPosition = await removeSupply(trackedPosition.id, delta, 1);
+        supplyPositionId = updatedPosition.id;
+        if (!market.supply_mpt_issuance_id) {
+          remainingSupply = updatedPosition.supplyAmount;
+        }
+      }
+    }
 
     const withdrawResult: WithdrawSupplyResult = {
       marketId,
-      supplyPositionId: updatedPosition.id,
-      withdrawnAmount: amount,
-      remainingSupply: updatedPosition.supplyAmount,
-      txHash: tx.hash,
+      supplyPositionId,
+      withdrawnAmount: effectiveWithdrawAmount,
+      remainingSupply,
+      txHash,
     };
 
     if (idempotencyKey) {
@@ -1649,9 +1688,9 @@ export async function processWithdrawSupply(
       userAddress,
       marketId,
       onchainTxId: onchainTx.id,
-      amount,
+      amount: effectiveWithdrawAmount,
       currency: market.debt_currency,
-      payload: { txHash: tx.hash, supplyPositionId: updatedPosition.id },
+      payload: { txHash, supplyPositionId, vaultId: market.supply_vault_id },
     });
 
     return { result: withdrawResult };
@@ -1679,15 +1718,54 @@ export async function getSupplyPositionWithMetrics(
     return null;
   }
 
-  await updateGlobalYieldIndex(marketId);
-
-  const position = await getSupplyPositionForUser(userAddress, marketId);
-  if (!position) {
+  const pool = await getPoolMetrics(marketId);
+  if (!pool) {
     return null;
   }
 
-  const pool = await getPoolMetrics(marketId);
-  if (!pool) {
+  if (market.supply_mpt_issuance_id) {
+    const client = await getClient();
+    const shareBalance = await getSupplierShareBalance(
+      client,
+      userAddress,
+      market.supply_mpt_issuance_id
+    );
+    const shareScale = Math.max(0, market.vault_scale ?? 6);
+    const onchainSupplyAmount = toAmount(
+      new Decimal(shareBalance.shares).div(new Decimal(10).pow(shareScale))
+    );
+
+    if (onchainSupplyAmount <= 0) {
+      return null;
+    }
+
+    const now = new Date();
+    const onchainPosition: SupplyPosition = {
+      id: `onchain:${marketId}:${userAddress}`,
+      userId: userAddress,
+      marketId,
+      status: 'ACTIVE',
+      supplyAmount: onchainSupplyAmount,
+      yieldIndex: 1,
+      lastYieldUpdate: now,
+      suppliedAt: now,
+      closedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const metrics = buildSupplyPositionMetrics(onchainPosition, pool);
+
+    return {
+      position: onchainPosition,
+      metrics,
+      pool,
+      market: mapMarketRecordToDomain(market),
+    };
+  }
+
+  const position = await getSupplyPositionForUser(userAddress, marketId);
+  if (!position) {
     return null;
   }
 

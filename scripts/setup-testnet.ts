@@ -1,17 +1,18 @@
 /**
- * One-time testnet setup script
+ * One-time XRPL setup script
  *
  * This script:
- * 1. Creates and funds wallets (issuer, backend) from the testnet faucet
+ * 1. Creates and funds wallets (issuer, backend) from faucet
  * 2. Enables rippling on the issuer account
  * 3. Creates trust lines from backend to issuer for all protocol tokens
  * 4. Issues initial protocol tokens to the backend wallet
- * 5. Automatically updates .env.local with the new credentials
+ * 5. Automatically updates .env.local or .env.devnet with the new credentials
  *
  * NOTE: This script does NOT initialize the database.
  * Run `npm run setup:db` separately to seed the database.
  *
  * Run with: npx tsx scripts/setup-testnet.ts
+ * Run devnet: npx tsx scripts/setup-testnet.ts --devnet
  * Use --force to overwrite existing configuration
  */
 
@@ -20,7 +21,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { TOKEN_CODE_BY_SYMBOL } from '../src/lib/xrpl/currency-codes';
 
-const TESTNET_URL = 'wss://s.altnet.rippletest.net:51233';
+const NETWORK_CONFIG = {
+  testnet: {
+    label: 'testnet',
+    wsUrl: 'wss://s.altnet.rippletest.net:51233',
+    explorerUrl: 'https://testnet.xrpl.org',
+  },
+  devnet: {
+    label: 'devnet',
+    wsUrl: 'wss://s.devnet.rippletest.net:51233',
+    explorerUrl: 'https://devnet.xrpl.org',
+  },
+} as const;
+
+type XrplNetwork = keyof typeof NETWORK_CONFIG;
 const TOKEN_SAIL_CODE = TOKEN_CODE_BY_SYMBOL.SAIL;
 const TOKEN_NYRA_CODE = TOKEN_CODE_BY_SYMBOL.NYRA;
 const TOKEN_RLUSD_CODE = TOKEN_CODE_BY_SYMBOL.RLUSD;
@@ -29,25 +43,23 @@ const INITIAL_SAIL_AMOUNT = '100000';
 const INITIAL_NYRA_AMOUNT = '100000';
 const INITIAL_RLUSD_AMOUNT = '100000';
 
-const ENV_FILE_PATH = path.join(process.cwd(), '.env.local');
-
-function checkExistingConfig(): boolean {
-  if (!fs.existsSync(ENV_FILE_PATH)) {
+function checkExistingConfig(envFilePath: string): boolean {
+  if (!fs.existsSync(envFilePath)) {
     return false;
   }
 
-  const content = fs.readFileSync(ENV_FILE_PATH, 'utf-8');
+  const content = fs.readFileSync(envFilePath, 'utf-8');
   const hasIssuerSeed = /^ISSUER_WALLET_SEED=.+$/m.test(content);
   const hasBackendSeed = /^BACKEND_WALLET_SEED=.+$/m.test(content);
 
   return hasIssuerSeed && hasBackendSeed;
 }
 
-function updateEnvFile(values: Record<string, string>): void {
+function updateEnvFile(envFilePath: string, values: Record<string, string>): void {
   let content = '';
 
-  if (fs.existsSync(ENV_FILE_PATH)) {
-    content = fs.readFileSync(ENV_FILE_PATH, 'utf-8');
+  if (fs.existsSync(envFilePath)) {
+    content = fs.readFileSync(envFilePath, 'utf-8');
   }
 
   for (const [key, value] of Object.entries(values)) {
@@ -59,7 +71,7 @@ function updateEnvFile(values: Record<string, string>): void {
     }
   }
 
-  fs.writeFileSync(ENV_FILE_PATH, content);
+  fs.writeFileSync(envFilePath, content);
 }
 
 async function enableRippling(client: Client, wallet: Wallet): Promise<void> {
@@ -148,31 +160,36 @@ async function sendToken(
 
 async function main() {
   const forceFlag = process.argv.includes('--force');
+  const isDevnet = process.argv.includes('--devnet');
+  const network: XrplNetwork = isDevnet ? 'devnet' : 'testnet';
+  const networkConfig = NETWORK_CONFIG[network];
+  const envFileName = network === 'devnet' ? '.env.devnet' : '.env.local';
+  const envFilePath = path.join(process.cwd(), envFileName);
 
   console.log('='.repeat(60));
-  console.log('XRPL Lending Tokens - Testnet Setup');
+  console.log(`XRPL Lending Tokens - ${networkConfig.label.toUpperCase()} Setup`);
   console.log('='.repeat(60));
   console.log();
 
   // Check for existing configuration
-  if (checkExistingConfig() && !forceFlag) {
-    console.log('Existing wallet configuration found in .env.local');
+  if (checkExistingConfig(envFilePath) && !forceFlag) {
+    console.log(`Existing wallet configuration found in ${envFileName}`);
     console.log('');
     console.log('Running this script again will create NEW wallets and');
     console.log('overwrite your existing configuration.');
     console.log('');
     console.log('If you want to proceed, run with --force flag:');
-    console.log('  npx tsx scripts/setup-testnet.ts --force');
+    console.log(`  npx tsx scripts/setup-testnet.ts ${isDevnet ? '--devnet ' : ''}--force`);
     console.log('');
     process.exit(0);
   }
 
-  const client = new Client(TESTNET_URL);
+  const client = new Client(networkConfig.wsUrl);
 
   try {
-    console.log('Connecting to testnet...');
+    console.log(`Connecting to ${networkConfig.label}...`);
     await client.connect();
-    console.log('Connected to', TESTNET_URL);
+    console.log('Connected to', networkConfig.wsUrl);
     console.log();
 
     // 1. Create and fund wallets
@@ -228,9 +245,9 @@ async function main() {
     );
     console.log();
 
-    // 5. Update .env.local
-    console.log('Updating .env.local...');
-    updateEnvFile({
+    // 5. Update env file
+    console.log(`Updating ${envFileName}...`);
+    updateEnvFile(envFilePath, {
       ISSUER_WALLET_SEED: issuerWallet.seed!,
       BACKEND_WALLET_SEED: backendWallet.seed!,
       ISSUER_ADDRESS: issuerWallet.address,
@@ -238,27 +255,28 @@ async function main() {
       TOKEN_SAIL_CODE,
       TOKEN_NYRA_CODE,
       TOKEN_RLUSD_CODE,
-      NEXT_PUBLIC_TESTNET_URL: TESTNET_URL,
-      NEXT_PUBLIC_TESTNET_EXPLORER: 'https://testnet.xrpl.org',
+      NEXT_PUBLIC_XRPL_NETWORK: network,
+      NEXT_PUBLIC_TESTNET_URL: networkConfig.wsUrl,
+      NEXT_PUBLIC_TESTNET_EXPLORER: networkConfig.explorerUrl,
     });
-    console.log('.env.local updated');
+    console.log(`${envFileName} updated`);
     console.log();
 
     // 6. Output summary
     console.log('='.repeat(60));
-    console.log('TESTNET SETUP COMPLETE!');
+    console.log(`${networkConfig.label.toUpperCase()} SETUP COMPLETE!`);
     console.log('='.repeat(60));
     console.log();
     console.log('Wallet Addresses:');
     console.log(`  Issuer:  ${issuerWallet.address}`);
     console.log(`  Backend: ${backendWallet.address}`);
     console.log();
-    console.log(`View on explorer: https://testnet.xrpl.org/accounts/${backendWallet.address}`);
+    console.log(`View on explorer: ${networkConfig.explorerUrl}/accounts/${backendWallet.address}`);
     console.log();
     console.log('Next steps:');
-    console.log('  1. Configure DATABASE_URL in .env.local (Neon connection string)');
-    console.log('  2. Run: npm run setup:db');
-    console.log('  3. Run: npm run dev');
+    console.log(`  1. Configure DATABASE_URL in ${envFileName} (Neon connection string)`);
+    console.log(`  2. Run: npm run ${isDevnet ? 'setup:db:devnet' : 'setup:db'}`);
+    console.log(`  3. Run: npm run ${isDevnet ? 'dev:devnet' : 'dev'}`);
 
   } catch (error) {
     console.error('Setup failed:', error);
@@ -266,7 +284,7 @@ async function main() {
   } finally {
     await client.disconnect();
     console.log();
-    console.log('Disconnected from testnet.');
+    console.log(`Disconnected from ${networkConfig.label}.`);
   }
 }
 

@@ -2,6 +2,8 @@ import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 
 import { db, markets } from '../db';
+import { getClient } from '../xrpl/client';
+import { getSupplyVaultInfo } from '../xrpl/vault';
 import {
   calculateGlobalYieldIndex,
   calculateSupplyApr,
@@ -20,10 +22,12 @@ interface MarketPoolState {
   id: string;
   totalSupplied: number;
   totalBorrowed: number;
+  vaultAvailableAssets: number | null;
   baseInterestRate: number;
   reserveFactor: number;
   globalYieldIndex: number;
   lastIndexUpdate: Date;
+  supplyVaultId: string | null;
 }
 
 function toAmount(value: Decimal.Value): number {
@@ -35,11 +39,33 @@ function parsePoolState(row: typeof markets.$inferSelect): MarketPoolState {
     id: row.id,
     totalSupplied: parseFloat(row.totalSupplied),
     totalBorrowed: parseFloat(row.totalBorrowed),
+    vaultAvailableAssets: null,
     baseInterestRate: parseFloat(row.baseInterestRate),
     reserveFactor: parseFloat(row.reserveFactor),
     globalYieldIndex: parseFloat(row.globalYieldIndex),
     lastIndexUpdate: row.lastIndexUpdate,
+    supplyVaultId: row.supplyVaultId,
   };
+}
+
+async function hydrateVaultPoolState(state: MarketPoolState): Promise<MarketPoolState> {
+  if (!state.supplyVaultId) {
+    return state;
+  }
+
+  try {
+    const client = await getClient();
+    const vaultInfo = await getSupplyVaultInfo(client, state.supplyVaultId);
+
+    return {
+      ...state,
+      totalSupplied: toAmount(vaultInfo.assetsTotal),
+      vaultAvailableAssets: toAmount(vaultInfo.assetsAvailable),
+    };
+  } catch (error) {
+    console.warn(`Failed to load vault state for market ${state.id}:`, error);
+    return state;
+  }
 }
 
 async function getMarketPoolState(marketId: string, database: DbClient = db): Promise<MarketPoolState | null> {
@@ -51,13 +77,17 @@ async function getMarketPoolState(marketId: string, database: DbClient = db): Pr
     return null;
   }
 
-  return parsePoolState(market);
+  const state = parsePoolState(market);
+  return hydrateVaultPoolState(state);
 }
 
 function buildPoolMetrics(state: MarketPoolState): PoolMetrics {
-  const availableLiquidity = toAmount(
+  const dbModeAvailableLiquidity = toAmount(
     Decimal.max(0, new Decimal(state.totalSupplied).sub(new Decimal(state.totalBorrowed)))
   );
+  const availableLiquidity = state.vaultAvailableAssets === null
+    ? dbModeAvailableLiquidity
+    : Math.min(dbModeAvailableLiquidity, state.vaultAvailableAssets);
   const utilizationRate = calculateUtilizationRate(state.totalBorrowed, state.totalSupplied);
   const supplyApr = calculateSupplyApr(state.baseInterestRate, utilizationRate, state.reserveFactor);
   const supplyApy = calculateSupplyApy(supplyApr);

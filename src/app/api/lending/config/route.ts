@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAllActiveMarkets, getMarketPrices } from '@/lib/db/seed';
 import { getIssuerAddress, getBackendAddress } from '@/lib/xrpl/wallet';
+import { getXrplExplorerUrl, getXrplNetwork, getXrplWsUrl } from '@/lib/config/runtime';
 
 /**
  * GET /api/lending/config
@@ -27,6 +28,9 @@ export async function GET() {
           liquidationLtvRatio: market.liquidation_ltv_ratio,
           baseInterestRate: market.base_interest_rate,
           minSupplyAmount: market.min_supply_amount,
+          supplyVaultId: market.supply_vault_id,
+          supplyMptIssuanceId: market.supply_mpt_issuance_id,
+          vaultScale: market.vault_scale,
           reserveFactor: market.reserve_factor,
           totalSupplied: market.total_supplied,
           totalBorrowed: market.total_borrowed,
@@ -47,9 +51,9 @@ export async function GET() {
         markets: marketsWithPrices,
         issuerAddress,
         backendAddress,
-        testnetUrl:
-          process.env.NEXT_PUBLIC_TESTNET_URL || 'wss://s.altnet.rippletest.net:51233',
-        explorerUrl: process.env.NEXT_PUBLIC_TESTNET_EXPLORER || 'https://testnet.xrpl.org',
+        network: getXrplNetwork(),
+        testnetUrl: getXrplWsUrl(),
+        explorerUrl: getXrplExplorerUrl(),
       },
     });
   } catch (error) {
