@@ -27,7 +27,7 @@ Laplace is a lending protocol that leverages **native XRPL transaction types** i
 | XRPL Primitive | Transaction Types Used | Purpose in Laplace |
 |----------------|----------------------|-------------------|
 | **Vault** (XLS-65) | `VaultCreate`, `VaultDeposit`, `VaultWithdraw` | Pool liquidity management; lenders deposit debt tokens, receive LP shares |
-| **Loan** (XLS-66) | `LoanBrokerSet`, `LoanSet`, `LoanPay`, `LoanManage` | Native loan objects track principal, interest, maturity on-ledger |
+| **Loan** (XLS-66) | `LoanBrokerSet`, `LoanSet`, `LoanPay`, `LoanDelete` | Native loan objects track principal, interest, maturity on-ledger |
 | **Escrow** | `EscrowCreate`, `EscrowFinish`, `EscrowCancel` | Conditional collateral locking with SHA-256 preimage conditions |
 | **TrustLine** | `TrustSet`, `Payment` | Token issuance and transfer for collateral/debt assets |
 
@@ -36,50 +36,66 @@ Laplace is a lending protocol that leverages **native XRPL transaction types** i
 ## Architecture at a Glance
 
 ```mermaid
-flowchart TB
-    subgraph Client["Browser Client"]
-        UI[Next.js UI]
-        WS[Wallet Storage]
+flowchart LR
+    subgraph FE["Client (Next.js UI)"]
+        U[Borrower / Lender]
+        UI[Borrow and Lend pages]
+        WALLET[Wallet seed or signed tx]
     end
 
-    subgraph Server["Next.js API Routes"]
+    subgraph BE["API + Service Layer"]
         API["/api/lending/*"]
-        SVC[Lending Service]
+        SVC[Lending service + risk checks]
+        CALC[LTV, interest, liquidation math]
+        ORACLE[Price source]
     end
 
-    subgraph XRPL["XRPL Devnet"]
-        VLT[Vault Objects]
-        LN[Loan Objects]
-        ESC[Escrow Objects]
-        TL[TrustLines]
+    subgraph LEDGER["XRPL Devnet (Settlement)"]
+        ESC[EscrowCreate / EscrowFinish]
+        LOAN[LoanSet / LoanPay / LoanDelete]
+        VAULT[VaultCreate / VaultDeposit / VaultWithdraw]
+        TOKENS[TrustSet / Payment]
     end
 
-    subgraph DB["Neon Postgres"]
-        USR[(users)]
-        MKT[(markets)]
+    subgraph DATA["Neon Postgres (State + Audit)"]
         POS[(positions)]
-        SPP[(supply_positions)]
-        TXN[(onchain_transactions)]
+        SUP[(supply_positions)]
+        MKT[(markets)]
+        TX[(onchain_transactions)]
         EVT[(app_events)]
-        ORC[(price_oracle)]
+        PR[(price_oracle)]
     end
 
-    UI -->|HTTP| API
-    WS -->|seed/address| UI
+    U --> UI
+    WALLET --> UI
+    UI -->|1. request action| API
     API --> SVC
-    SVC -->|xrpl.js| XRPL
-    SVC -->|Drizzle ORM| DB
+    SVC --> CALC
+    ORACLE --> CALC
+    PR --> ORACLE
 
-    VLT -.->|tx hash| TXN
-    LN -.->|tx hash| TXN
-    ESC -.->|tx hash| TXN
+    SVC -->|2a. collateral lock| ESC
+    SVC -->|2b. debt origination/repay| LOAN
+    SVC -->|2c. pool liquidity| VAULT
+    SVC -->|2d. token transfers| TOKENS
+
+    ESC -->|3. tx hash + result| SVC
+    LOAN -->|3. tx hash + result| SVC
+    VAULT -->|3. tx hash + result| SVC
+    TOKENS -->|3. tx hash + result| SVC
+
+    SVC -->|4a. update business state| POS
+    SVC -->|4b. update supply state| SUP
+    SVC -->|4c. update pool metrics| MKT
+    SVC -->|4d. persist ledger proof| TX
+    SVC -->|4e. idempotency + timeline| EVT
 ```
 
 **Key boundaries:**
-- UI constructs transactions, user signs locally (or provides seed for PoC flows)
-- API routes orchestrate lending logic and XRPL submission
-- Every XRPL transaction is persisted in `onchain_transactions` for auditability
-- Position state (collateral, debt, interest) syncs between DB and on-ledger objects
+- **Execution split:** service layer enforces policy/risk; XRPL is the settlement source of truth.
+- **Two user paths:** borrower path uses Escrow + Loan txs; lender path uses Vault txs.
+- **Ledger proof:** each state-changing action stores tx hash + metadata in `onchain_transactions`.
+- **Replay safety:** app-side state transitions are recorded with idempotent `app_events`.
 
 ---
 
