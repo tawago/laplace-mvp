@@ -8,19 +8,7 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import * as schema from './schema';
-
-// Validate DATABASE_URL at module load time
-function getDatabaseUrl(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error(
-      'DATABASE_URL environment variable is required.\n' +
-        'Please configure your Neon database connection string in .env.local:\n' +
-        'DATABASE_URL=postgres://user:pass@host/database?sslmode=require'
-    );
-  }
-  return url;
-}
+import { getDatabaseUrl } from '@/lib/config/runtime';
 
 // Create the Neon SQL client
 const sql = neon(getDatabaseUrl());

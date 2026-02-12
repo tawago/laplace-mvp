@@ -44,6 +44,11 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
         minCollateralAmount: '10',
         minBorrowAmount: '5',
         minSupplyAmount: '5',
+        supplyVaultId: null,
+        supplyMptIssuanceId: null,
+        loanBrokerId: null,
+        loanBrokerAddress: null,
+        vaultScale: 6,
         totalSupplied: '0',
         totalBorrowed: '0',
         globalYieldIndex: '1.0',
@@ -64,6 +69,11 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
           minCollateralAmount: '10',
           minBorrowAmount: '5',
           minSupplyAmount: '5',
+          supplyVaultId: null,
+          supplyMptIssuanceId: null,
+          loanBrokerId: null,
+          loanBrokerAddress: null,
+          vaultScale: 6,
           totalSupplied: '0',
           totalBorrowed: '0',
           globalYieldIndex: '1.0',
@@ -164,6 +174,11 @@ export async function getMarketByName(name: string) {
     min_collateral_amount: parseFloat(market.minCollateralAmount),
     min_borrow_amount: parseFloat(market.minBorrowAmount),
     min_supply_amount: parseFloat(market.minSupplyAmount),
+    supply_vault_id: market.supplyVaultId,
+    supply_mpt_issuance_id: market.supplyMptIssuanceId,
+    loan_broker_id: market.loanBrokerId,
+    loan_broker_address: market.loanBrokerAddress,
+    vault_scale: market.vaultScale,
     total_supplied: parseFloat(market.totalSupplied),
     total_borrowed: parseFloat(market.totalBorrowed),
     global_yield_index: parseFloat(market.globalYieldIndex),
@@ -196,6 +211,11 @@ export async function getMarketById(id: string) {
     min_collateral_amount: parseFloat(market.minCollateralAmount),
     min_borrow_amount: parseFloat(market.minBorrowAmount),
     min_supply_amount: parseFloat(market.minSupplyAmount),
+    supply_vault_id: market.supplyVaultId,
+    supply_mpt_issuance_id: market.supplyMptIssuanceId,
+    loan_broker_id: market.loanBrokerId,
+    loan_broker_address: market.loanBrokerAddress,
+    vault_scale: market.vaultScale,
     total_supplied: parseFloat(market.totalSupplied),
     total_borrowed: parseFloat(market.totalBorrowed),
     global_yield_index: parseFloat(market.globalYieldIndex),
@@ -223,6 +243,11 @@ export async function getAllActiveMarkets() {
     liquidation_ltv_ratio: parseFloat(market.liquidationLtvRatio),
     base_interest_rate: parseFloat(market.baseInterestRate),
     min_supply_amount: parseFloat(market.minSupplyAmount),
+    supply_vault_id: market.supplyVaultId,
+    supply_mpt_issuance_id: market.supplyMptIssuanceId,
+    loan_broker_id: market.loanBrokerId,
+    loan_broker_address: market.loanBrokerAddress,
+    vault_scale: market.vaultScale,
     total_supplied: parseFloat(market.totalSupplied),
     total_borrowed: parseFloat(market.totalBorrowed),
     global_yield_index: parseFloat(market.globalYieldIndex),
@@ -271,4 +296,33 @@ export async function updatePrice(
       updatedAt: new Date(),
     })
     .where(and(eq(priceOracle.marketId, marketId), eq(priceOracle.assetSide, assetSide)));
+}
+
+export async function setMarketSupplyVaultConfig(
+  marketId: string,
+  config: { vaultId: string; mptIssuanceId: string; vaultScale: number }
+): Promise<void> {
+  await db
+    .update(markets)
+    .set({
+      supplyVaultId: config.vaultId,
+      supplyMptIssuanceId: config.mptIssuanceId,
+      vaultScale: config.vaultScale,
+      updatedAt: new Date(),
+    })
+    .where(eq(markets.id, marketId));
+}
+
+export async function setMarketLoanBrokerConfig(
+  marketId: string,
+  config: { loanBrokerId: string; loanBrokerAddress: string }
+): Promise<void> {
+  await db
+    .update(markets)
+    .set({
+      loanBrokerId: config.loanBrokerId,
+      loanBrokerAddress: config.loanBrokerAddress,
+      updatedAt: new Date(),
+    })
+    .where(eq(markets.id, marketId));
 }

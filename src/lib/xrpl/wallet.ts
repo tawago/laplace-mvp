@@ -45,3 +45,30 @@ export function getBackendAddress(): string {
   }
   return address;
 }
+
+export function getLoanBrokerWallet(): Wallet {
+  const seed = process.env.LOAN_BROKER_SEED || process.env.BACKEND_WALLET_SEED;
+  if (!seed) {
+    throw new Error('LOAN_BROKER_SEED or BACKEND_WALLET_SEED not configured');
+  }
+
+  return Wallet.fromSeed(seed);
+}
+
+export function getLoanBrokerAddress(): string {
+  const address = process.env.LOAN_BROKER_ADDRESS;
+  if (address) {
+    return address;
+  }
+
+  return getLoanBrokerWallet().address;
+}
+
+export function getLoanBrokerId(): string {
+  const brokerId = process.env.LOAN_BROKER_ID;
+  if (!brokerId) {
+    throw new Error('LOAN_BROKER_ID not configured');
+  }
+
+  return brokerId;
+}

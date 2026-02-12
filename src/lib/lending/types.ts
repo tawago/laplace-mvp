@@ -23,6 +23,11 @@ export interface Market {
   minCollateralAmount: number;
   minBorrowAmount: number;
   minSupplyAmount?: number;
+  supplyVaultId?: string | null;
+  supplyMptIssuanceId?: string | null;
+  loanBrokerId?: string | null;
+  loanBrokerAddress?: string | null;
+  vaultScale?: number;
   totalSupplied?: number;
   totalBorrowed?: number;
   globalYieldIndex?: number;
@@ -43,6 +48,17 @@ export interface Position {
   openedAt: Date;
   closedAt: Date | null;
   liquidatedAt: Date | null;
+  escrowOwner: string | null;
+  escrowSequence: number | null;
+  escrowCondition: string | null;
+  escrowFulfillment: string | null;
+  escrowPreimage: string | null;
+  escrowCancelAfter: Date | null;
+  loanId: string | null;
+  loanHash: string | null;
+  loanTermMonths: number;
+  loanMaturityDate: Date | null;
+  loanOpenedAtLedgerIndex: number | null;
 }
 
 export interface SupplyPosition {
@@ -68,6 +84,7 @@ export interface PositionMetrics {
   liquidatable: boolean;
   maxBorrowableAmount: number;
   maxWithdrawableAmount: number;
+  availableLiquidity?: number;
 }
 
 export interface PoolMetrics {
@@ -115,7 +132,6 @@ export interface AppEvent {
   eventType: string;
   module: EventModule;
   status: EventStatus;
-  userId: string | null;
   userAddress: string | null;
   marketId: string | null;
   positionId: string | null;
@@ -191,6 +207,7 @@ export interface DepositResult {
   positionId: string;
   collateralAmount: number;
   newCollateralTotal: number;
+  escrowSequence?: number;
 }
 
 export interface BorrowResult {
@@ -206,6 +223,7 @@ export interface RepayResult {
   interestPaid: number;
   principalPaid: number;
   remainingDebt: number;
+  collateralReleasedTxHash?: string;
 }
 
 export interface WithdrawResult {
@@ -213,6 +231,7 @@ export interface WithdrawResult {
   withdrawnAmount: number;
   remainingCollateral: number;
   txHash: string;
+  escrowFinishTxHash?: string;
 }
 
 export interface LiquidationResult {

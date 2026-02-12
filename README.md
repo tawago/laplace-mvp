@@ -2,6 +2,48 @@
 
 > **Objetivo:** Criar um mock navegável (somente front-end) para visualizar o fluxo de tokenização de quartos de dois hotéis: **THE SAIL** e **NYRA** (Malásia). Não haverá backend, lógica de carteira, nem blockchain neste estágio.
 
+## Current Status (Lending PoC)
+
+This repository now includes a hybrid implementation (legacy mock UI + real lending backend on XRPL devnet):
+
+- **Phase 1 complete:** Vault-based supply/liquidity flow
+- **Phase 2 in progress:** Escrow-based collateral flow for borrower deposit/withdraw lifecycle
+
+Because of Vault + Escrow support, setup now has a few required steps before using lending flows.
+
+### Lending Setup Checklist
+
+1. Configure environment (`.env.local`) including `DATABASE_URL`.
+2. Create/fund issuer + backend wallets and token trust lines:
+
+```bash
+pnpm setup:xrpl
+```
+
+3. Ensure issuer token escrow permission is enabled (`asfAllowTrustLineLocking`):
+
+```bash
+pnpm setup:escrow
+```
+
+4. Initialize schema/data:
+
+```bash
+pnpm setup:db
+```
+
+5. Apply latest schema migrations (including escrow columns):
+
+```bash
+pnpm db:push
+```
+
+6. Start app:
+
+```bash
+pnpm dev
+```
+
 ---
 
 ## Páginas do Mock e Conteúdo

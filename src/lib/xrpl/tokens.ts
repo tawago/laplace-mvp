@@ -157,6 +157,8 @@ export async function verifyTransaction(
       amount = toTokenAmount(parseXrplAmount(txJson.Amount));
       usedDeliveredAmount = false;
     }
+  } else {
+    amount = toTokenAmount(parseXrplAmount(txJson.Amount));
   }
 
   const destination = typeof txJson.Destination === 'string' ? txJson.Destination : '';

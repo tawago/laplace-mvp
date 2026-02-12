@@ -48,6 +48,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       let status = 400;
       if (error.code === 'MARKET_NOT_FOUND') status = 404;
       if (error.code === 'NO_SUPPLY_POSITION') status = 404;
+      if (error.code === 'UNSUPPORTED_OPERATION') status = 410;
       if (error.code === 'OPERATION_IN_PROGRESS') status = 409;
       if (error.code === 'IDEMPOTENCY_MISMATCH') status = 409;
       if (error.code === 'COLLECT_YIELD_FAILED') status = 500;

@@ -7,32 +7,24 @@ import { processRepay } from '@/lib/lending';
  * Verify a repayment transaction and reduce debt
  *
  * Body:
- * - txHash: XRPL transaction hash
- * - senderAddress: User's XRPL address
+ * - userAddress: User's XRPL address
  * - marketId: Target market ID
+ * - amount: Repayment amount in debt token
+ * - borrowerSeed: User wallet seed (devnet demo flow)
+ * - repayKind?: One of regular|full|overpayment|late
  * - idempotencyKey?: Optional idempotency key
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { txHash, senderAddress, marketId, idempotencyKey } = body;
+    const { userAddress, marketId, amount, borrowerSeed, repayKind, idempotencyKey } = body;
 
     // Validate required fields
-    if (!txHash) {
+    if (!userAddress) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: 'MISSING_TX_HASH', message: 'txHash is required' },
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!senderAddress) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: { code: 'MISSING_SENDER_ADDRESS', message: 'senderAddress is required' },
+          error: { code: 'MISSING_USER_ADDRESS', message: 'userAddress is required' },
         },
         { status: 400 }
       );
@@ -48,8 +40,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'INVALID_AMOUNT', message: 'amount must be a number greater than 0' },
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!borrowerSeed || typeof borrowerSeed !== 'string') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'MISSING_BORROWER_SEED', message: 'borrowerSeed is required' },
+        },
+        { status: 400 }
+      );
+    }
+
+    const normalizedRepayKind =
+      repayKind === 'full' || repayKind === 'overpayment' || repayKind === 'late' ? repayKind : 'regular';
+
     // Validate address format
-    if (!senderAddress.startsWith('r') || senderAddress.length < 25) {
+    if (!userAddress.startsWith('r') || userAddress.length < 25) {
       return NextResponse.json(
         {
           success: false,
@@ -59,7 +74,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { result, error } = await processRepay(txHash, senderAddress, marketId, idempotencyKey);
+    const { result, error } = await processRepay(
+      userAddress,
+      marketId,
+      amount,
+      borrowerSeed,
+      normalizedRepayKind,
+      idempotencyKey
+    );
 
     if (error) {
       const status = error.code === 'INTERNAL_ERROR' ? 500 : 400;

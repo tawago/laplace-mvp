@@ -15,7 +15,6 @@ export interface AppEventRow {
   event_type: string;
   module: EventModule;
   status: EventStatus;
-  user_id: string | null;
   user_address: string | null;
   market_id: string | null;
   position_id: string | null;
@@ -36,7 +35,6 @@ function toRow(event: AppEvent): AppEventRow {
     event_type: event.eventType,
     module: event.module as EventModule,
     status: event.status as EventStatus,
-    user_id: event.userId,
     user_address: event.userAddress,
     market_id: event.marketId,
     position_id: event.positionId,
@@ -56,7 +54,6 @@ export interface EmitEventParams {
   eventType: string;
   module: EventModule;
   status: EventStatus;
-  userId?: string | null;
   userAddress?: string | null;
   marketId?: string | null;
   positionId?: string | null;
@@ -93,7 +90,6 @@ export async function emitAppEvent(params: EmitEventParams): Promise<AppEventRow
       eventType: params.eventType,
       module: params.module,
       status: params.status,
-      userId: params.userId ?? null,
       userAddress: params.userAddress ?? null,
       marketId: params.marketId ?? null,
       positionId: params.positionId ?? null,
@@ -214,7 +210,6 @@ export async function acquireIdempotencyKey(
       eventType: params.eventType,
       module: params.module,
       status: params.status,
-      userId: params.userId ?? null,
       userAddress: params.userAddress ?? null,
       marketId: params.marketId ?? null,
       positionId: params.positionId ?? null,

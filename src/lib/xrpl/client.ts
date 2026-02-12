@@ -1,6 +1,5 @@
 import { Client } from 'xrpl';
-
-const TESTNET_URL = process.env.NEXT_PUBLIC_TESTNET_URL || 'wss://s.altnet.rippletest.net:51233';
+import { getXrplWsUrl } from '@/lib/config/runtime';
 
 let clientInstance: Client | null = null;
 
@@ -9,7 +8,7 @@ let clientInstance: Client | null = null;
  */
 export async function getClient(): Promise<Client> {
   if (!clientInstance) {
-    clientInstance = new Client(TESTNET_URL);
+    clientInstance = new Client(getXrplWsUrl());
   }
 
   if (!clientInstance.isConnected()) {
