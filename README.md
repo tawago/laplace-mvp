@@ -1,35 +1,41 @@
-# Laplace: Native XRPL Lending Protocol for RWA
-
-> **JFIIP Hackathon Submission** – A proof-of-concept DeFi lending protocol using native XRPL primitives (Vault, Loan, Escrow) to enable collateralized borrowing against tokenized real-world assets.
+# Laplace: Luxury RWA Marketplace with Native XRPL Lending Protocol
 
 ---
 
-## TL;DR
+Laplace is a luxury RWA marketplace and lending protocol that leverages native XRPL transaction types introduced in recent devnet amendments (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience. Users can:
 
-Laplace is a lending protocol that leverages **native XRPL transaction types** introduced in recent devnet amendments (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience. Users can:
+1. [**Supply**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) liquidity to protocol-managed Vaults and earn yield
+2. [**Deposit**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/deposit/route.ts) collateral (RWA tokens) via conditional Escrow
+3. [**Borrow**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/borrow/route.ts) debt tokens through native Loan objects
+4. [**Repay**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/repay/route.ts) loans and **withdraw** collateral
+5. [**Liquidate**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/liquidate/route.ts) under-collateralized positions
 
-1. **Supply** liquidity to protocol-managed Vaults and earn yield
-2. **Deposit** collateral (RWA tokens) via conditional Escrow
-3. **Borrow** debt tokens through native Loan objects
-4. **Repay** loans and **withdraw** collateral
-5. **Liquidate** under-collateralized positions
-
-**What is verifiably on-chain:**
+**What is verifiabley on-chain:**
 - Vault creation and deposit/withdraw operations
 - Loan origination, payments, and state changes
 - Escrow-based collateral locking with cryptographic conditions
-- All transactions persisted with hashes linking to devnet explorer
+- All transactions persisted
+
+### Test Flow on Devnet
+Live website: https://laplace-mvp.vercel.app/
+
+1. Navigate to `/admin` -> Generate a local wallet, get all three faucet tokens
+2. Navigate to `/lend` → Supply debt tokens (RLUSD) to the vault
+3. Navigate to `/borrow` → Deposit collateral tokens(SAIL or NYRA), borrow RLUSD
+4. Repay loan using regular type. To close Loan completely, Repay with "full" afterwards
+5. Withdraw collateral with the exact amount you've deposited
+4. Check `onchain_transactions` table for tx hashes
 
 ---
 
-## What We Built
+## XRPL and Core Functions
 
 | XRPL Primitive | Transaction Types Used | Purpose in Laplace |
 |----------------|----------------------|-------------------|
-| **Vault** (XLS-65) | `VaultCreate`, `VaultDeposit`, `VaultWithdraw` | Pool liquidity management; lenders deposit debt tokens, receive LP shares |
-| **Loan** (XLS-66) | `LoanBrokerSet`, `LoanSet`, `LoanPay`, `LoanDelete` | Native loan objects track principal, interest, maturity on-ledger |
-| **Escrow** | `EscrowCreate`, `EscrowFinish`, `EscrowCancel` | Conditional collateral locking with SHA-256 preimage conditions |
-| **TrustLine** | `TrustSet`, `Payment` | Token issuance and transfer for collateral/debt assets |
+| **Vault** (XLS-65) | [`VaultCreate`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L170), [`VaultDeposit`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L195), [`VaultWithdraw`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L212) | Pool liquidity management; lenders deposit debt tokens, receive LP shares |
+| **Loan** (XLS-66) | [`LoanBrokerSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L275), [`LoanSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L328), [`LoanPay`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L399), [`LoanDelete`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/lending/service.ts#L1749) | Native loan objects track principal, interest, maturity on-ledger |
+| **Escrow** | [`EscrowCreate`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L123), [`EscrowFinish`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L262), [`EscrowCancel`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L300) | Conditional collateral locking with SHA-256 preimage conditions |
+| **TrustLine** | [`TrustSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/client/xrpl.ts#L171), [`Payment`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/tokens.ts#L88) | Token issuance and transfer for collateral/debt assets |
 
 ---
 
@@ -86,7 +92,7 @@ flowchart LR
     CREDIT --> LOAN
 ```
 
-**Key boundaries:**
+**Key areas:**
 - **Tokenization first:** Laplace issues and distributes RWA tokens representing real-world exposure.
 - **Collateralized borrowing:** borrowers lock those RWA tokens to access loan liquidity.
 - **Yield model:** suppliers provide capital and earn yield from borrower repayments.
@@ -265,18 +271,20 @@ sequenceDiagram
 
 ## Live Transaction Evidence
 
-> Account: [`rMZQDaXsSorFv2s9qkNyoFxPfYAzvwjgC9`](https://devnet.xrpl.org/accounts/rMZQDaXsSorFv2s9qkNyoFxPfYAzvwjgC9)
+> Borrower & Lender Account: [`r3KFqgrvzkyFZ916TKSyz4N9qdmnRwhTxS`](https://devnet.xrpl.org/accounts/r3KFqgrvzkyFZ916TKSyz4N9qdmnRwhTxS)
 
 | Operation | Tx Type | Hash | Explorer | Result |
 |-----------|---------|------|----------|--------|
-| Vault Creation | `VaultCreate` | `A1B2C3...` | [View](https://devnet.xrpl.org/transactions/A1B2C3) | `tesSUCCESS` |
-| Supply Deposit | `VaultDeposit` | `D4E5F6...` | [View](https://devnet.xrpl.org/transactions/D4E5F6) | `tesSUCCESS` |
-| Collateral Escrow | `EscrowCreate` | `G7H8I9...` | [View](https://devnet.xrpl.org/transactions/G7H8I9) | `tesSUCCESS` |
-| Loan Origination | `LoanSet` | `J0K1L2...` | [View](https://devnet.xrpl.org/transactions/J0K1L2) | `tesSUCCESS` |
-| Loan Payment | `LoanPay` | `M3N4O5...` | [View](https://devnet.xrpl.org/transactions/M3N4O5) | `tesSUCCESS` |
-| Collateral Release | `EscrowFinish` | `P6Q7R8...` | [View](https://devnet.xrpl.org/transactions/P6Q7R8) | `tesSUCCESS` |
+| Vault Creation | `VaultCreate` | `145967282D69B8F660A0F372460F0E978B57F55E47CAF3B9CFE5E39738426DB5` | [View](https://devnet.xrpl.org/transactions/145967282D69B8F660A0F372460F0E978B57F55E47CAF3B9CFE5E39738426DB5) | `tesSUCCESS` |
+| Supply Deposit | `VaultDeposit` | `C6C6BA434B4E3949D0F3EE5786C1607192A8A8E3280E449591CFE856A9ADBF45` | [View](https://devnet.xrpl.org/transactions/C6C6BA434B4E3949D0F3EE5786C1607192A8A8E3280E449591CFE856A9ADBF45) | `tesSUCCESS` |
+| Collateral Escrow | `EscrowCreate` | `2488F0BBBABFDB5EEC67C79EB04D15B4E7B843CD476ABB0336263B18AF13F39F` | [View](https://devnet.xrpl.org/transactions/2488F0BBBABFDB5EEC67C79EB04D15B4E7B843CD476ABB0336263B18AF13F39F) | `tesSUCCESS` |
+| Loan Origination | `LoanSet` | `FE41C7FC8CC30CAD2C725BDE70C2D75D08AD0A5FB4C74DEE9E8F382ECD1E6335` | [View](https://devnet.xrpl.org/transactions/FE41C7FC8CC30CAD2C725BDE70C2D75D08AD0A5FB4C74DEE9E8F382ECD1E6335) | `tesSUCCESS` |
+| Loan Payment | `LoanPay` | `5DFD04FBC22F057C1117F4A5DAD4D65931A17F58DEBBD9550561BDCCDF6EFD64` | [View](https://devnet.xrpl.org/transactions/5DFD04FBC22F057C1117F4A5DAD4D65931A17F58DEBBD9550561BDCCDF6EFD64) | `tesSUCCESS` |
+| Loan Closure | `LoanDelete` | `FFB49CA90907DC2D3C27CDAFB057E5B43E2AC0A2D3A7129317E42E4C9D988EAB` | [View](https://devnet.xrpl.org/transactions/FFB49CA90907DC2D3C27CDAFB057E5B43E2AC0A2D3A7129317E42E4C9D988EAB) | `tesSUCCESS` |
+| Collateral Release | `EscrowFinish` | `A11ACC77D4930ED213DE64938C3BDBE7782184D3CD738E1BC9BDECBEA50989B9` | [View](https://devnet.xrpl.org/transactions/A11ACC77D4930ED213DE64938C3BDBE7782184D3CD738E1BC9BDECBEA50989B9) | `tesSUCCESS` |
+| Supply Withdraw | `VaultWithdraw` | `EC00FC1F2532FA21DBDE1424C77EE7BD289350E31A11C71D270612A2D8251EC3` | [View](https://devnet.xrpl.org/transactions/EC00FC1F2532FA21DBDE1424C77EE7BD289350E31A11C71D270612A2D8251EC3) | `tesSUCCESS` |
 
-> **Note:** Replace placeholder hashes with actual transaction hashes from your testing session. Query the database: `SELECT tx_hash, tx_type, tx_result FROM onchain_transactions ORDER BY observed_at DESC LIMIT 20;`
+> `VaultCreate` was submitted by protocol account [`rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H`](https://devnet.xrpl.org/accounts/rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H) and creates vault `2332F4EF476D9C65EFF401FD4634B46B46ECD79027ACFC3B1F6DE628B90F2601` used by this borrower flow.
 
 ---
 
@@ -327,36 +335,36 @@ pnpm dev
 
 ## Limitations
 
-### Devnet-Only Amendments
+### XRPL Devnet-Only Amendments
 
-| Amendment | Status | Impact |
-|-----------|--------|--------|
-| XLS-65 (SingleAssetVault) | Devnet only | Vault operations unavailable on mainnet |
-| XLS-66 (Loan) | Devnet only | Loan objects unavailable on mainnet |
+| Amendment | Status |
+|-----------|--------|
+| XLS-65 (SingleAssetVault) | Devnet only |
+| XLS-66 (Loan) | Devnet only |
 
 ### Known Issues
 
 - **`tecINVARIANT_FAILED`**: Occasionally occurs on devnet under load. Retry logic mitigates most cases.
-- **xrpl.js counter-party multisig gap**: The library lacks native support for broker co-signing patterns required by XLS-66. Current workaround uses backend wallet as sole signer.
-- **No real oracle**: Price feeds are mock values in `price_oracle` table. Production would require Chainlink/Band integration.
-- **Single-market PoC**: Currently supports one collateral/debt pair. Multi-market expansion is architectural but not implemented.
+- **xrpl.js counter-party multisig gap**: The library lacks native support for broker co-signing patterns required by XLS-66. Current workaround uses the backenduses backend wallet as the sole signer.
+- Price feeds are mock values in the `price_oracle` table. Production requires Chainlink/Band integration.
+- **Fixed-market**: Currently supports predefined two collateral/debt pair. Multi-market expansion is architectural but not implemented.
 
 ### Security Considerations (PoC Only)
 
-- Borrower seeds passed via API for demo convenience (production would use client-side signing)
+- Borrower seeds passed via API for demo convenience (production will use client-side signing)
 - No rate limiting or authentication on API endpoints
-- Escrow preimages stored in DB (production would use HSM/KMS)
+- Escrow preimages stored in DB (production will use HSM/KMS)
 
 ---
 
 ## Roadmap
 
-### Mainnet Readiness
+### Mainnet
 
 1. **Wait for amendments**: XLS-65 and XLS-66 must be enabled on mainnet
 2. **Client-side signing**: Remove seed transmission, use wallet adapters (Xumm, Crossmark)
 3. **Oracle integration**: Connect to price feeds (Pyth, Chainlink via bridge)
-4. **Audit**: Smart contract equivalent review of service logic
+4. **Audit**: Third party security review of service logic
 
 ### Feature Expansion
 
@@ -376,9 +384,3 @@ pnpm dev
 | Database | Neon Postgres, Drizzle ORM |
 | Blockchain | XRPL Devnet, xrpl.js v4.5 |
 | Math | Decimal.js (arbitrary precision) |
-
-
-<p align="center">
-  <strong>Built for JFIIP Hackathon 2025</strong><br/>
-  <em>Demonstrating native XRPL DeFi primitives for real-world asset lending</em>
-</p>
