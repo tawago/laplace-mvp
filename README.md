@@ -392,21 +392,43 @@ pnpm dev
 
 ---
 
-## 13. Technical Roadmap
+## 13. Roadmap
 
-### Mainnet
+### Tech
 
+#### Mainnet
 1. **Wait for amendments**: XLS-65 and XLS-66 must be enabled on mainnet
 2. **Client-side signing**: Remove seed transmission, use wallet adapters (Xumm, Crossmark)
 3. **Oracle integration**: Connect to price feeds (Pyth, Chainlink via bridge)
 4. **Audit**: Third party security review of service logic
 
-### Feature Expansion
+#### Feature Expansion
 
 - Multi-market support with different collateral/debt pairs
 - Variable interest rate curves based on utilization
 - Governance token for protocol parameters
 - Cross-chain collateral (IBC/Axelar bridge integration)
+
+### Business
+
+#### Phase 1 - Validate Model
+
+- Issue Laplace-originated RWA
+- Prove reusable collateral execution
+- Onboard initial lenders
+
+#### Phase 2 - Third-Party RWA Integration
+
+- Certify and onboard external real estate RWA
+- Apply standardized collateral governance
+- Expand multi-lender participation
+
+#### Phase 3 - Shared Credit Infrastructure
+
+- Establish XRPL-based global collateral registry
+- Enable cross-issuer reusable collateral
+- Build network effects across issuers and lenders
+
 
 ---
 
@@ -489,33 +511,7 @@ Regulatory responsibilities are clearly allocated to appropriate licensed entiti
 
 ---
 
-## 18. Business Roadmap
-
-### Phase 1 - Validate Model
-
-- Issue Laplace-originated RWA
-- Prove reusable collateral execution
-- Onboard initial lenders
-
-### Phase 2 - Third-Party RWA Integration
-
-- Certify and onboard external real estate RWA
-- Apply standardized collateral governance
-- Expand multi-lender participation
-
-### Phase 3 - Shared Credit Infrastructure
-
-- Establish XRPL-based global collateral registry
-- Enable cross-issuer reusable collateral
-- Build network effects across issuers and lenders
-
-### Long-Term Vision
-
-Laplace scales by onboarding third-party RWA and institutional lenders, positioning itself as the standardized credit layer for tokenized global real estate.
-
----
-
-## 19. Team
+## 18. Team
 
 ### Yusuke Hirota - CEO
 
