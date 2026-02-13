@@ -2,11 +2,11 @@
 
 Laplace is a tokenized luxury real estate marketplace and lending protocol that leverages native XRPL transaction types (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience supported by RWA tokens. Users can:
 
-1. [**Supply**](src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) liquidity to protocol-managed Vaults and earn yield
-2. [**Deposit**](src/app/api/lending/deposit/route.ts) collateral (RWA tokens) via conditional Escrow
-3. [**Borrow**](src/app/api/lending/borrow/route.ts) debt tokens through native Loan objects
-4. [**Repay**](src/app/api/lending/repay/route.ts) loans and **withdraw** collateral
-5. [**Liquidate**](src/app/api/lending/liquidate/route.ts) under-collateralized positions
+1. **Supply** liquidity to protocol-managed Vaults and earn yield
+2. **Deposit** collateral (RWA tokens) via conditional Escrow
+3. **Borrow** debt tokens through native Loan objects
+4. **Repay** loans and **withdraw** collateral
+5. **Liquidate** under-collateralized positions
 
 ## Application Walkthrough
 Live website: https://laplace-mvp.vercel.app/
@@ -25,6 +25,15 @@ Live website: https://laplace-mvp.vercel.app/
 - All transactions persisted
 
 ## Core Functions and XRPL Features
+
+| Function | Description | App Link | Code Link |
+| --- | --- | --- | --- |
+| **Supply** | Supply liquidity to protocol-managed Vaults and earn yield | [/lend](https://laplace-mvp.vercel.app/lend) | [src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts](src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) |
+| **Deposit** | Deposit collateral (RWA tokens) via conditional Escrow | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/deposit/route.ts](src/app/api/lending/deposit/route.ts) |
+| **Borrow** | Borrow debt tokens through native Loan objects | [/borrow](/https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/borrow/route.ts](src/app/api/lending/borrow/route.ts) |
+| **Repay** | Repay loans and withdraw collateral | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/repay/route.ts](src/app/api/lending/repay/route.ts) |
+| **Liquidate** | Liquidate under-collateralized positions | — | [src/app/api/lending/liquidate/route.ts](src/app/api/lending/liquidate/route.ts) |
+
 
 | XRPL Primitive | Transaction Types Used | Purpose in Laplace |
 |----------------|----------------------|-------------------|
