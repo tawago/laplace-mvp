@@ -1,17 +1,18 @@
-# Laplace – On-Chain Credit Infrastructure for Global Real Estate
+# Laplace: On-Chain Credit Infrastructure for Global Real Estate
 
 ## 1. Project Overview
 
-Laplace builds a protocol-based credit layer for global real estate RWA by enabling tokenized property to function as reusable collateral and executing credit lines directly on the XRP Ledger.
+Laplace offers a protocol-based credit layer for global real estate RWAs by enabling tokenized property to function as reusable collateral and allowing the execution of credit lines directly on the XRP Ledger.
 
-This MVP runs entirely on XRPL Devnet and integrates XRPL-native primitives including:
+![Laplace On-Chain Credit for Global Real Estate](app-screenshot.png)
+
+This MVP runs entirely on XRPL Devnet and leverages native XRPL transaction types ([XLS-65 Vaults](https://opensource.ripple.com/docs/xls-65-single-asset-vault) and [XLS-66 Loans](https://opensource.ripple.com/docs/xls-66-lending-protocol)) to create a fully on-chain lending experience supported by RWA tokens including:
 - Single Asset Vault (SAV)
 - Loan object
 - Escrow-based collateral locking
 - Multi-signature enforcement
 - On-chain collateral state transitions
 
----
 
 ## 2. Problem
 
@@ -25,11 +26,10 @@ Tokenized real estate today cannot reliably function as reusable collateral acro
 
 As a result, liquidity requires asset sale rather than collateral reuse. The structural bottleneck in RWA markets is not token issuance - it is credit infrastructure.
 
----
 
 ## 3. Solution
 
-Laplace builds the missing credit layer for global real estate RWA. We standardize SPV governance off-chain and anchor loan issuance and collateral state transitions directly on XRPL.
+Laplace offers the missing credit layer for global real estate RWAs. We standardize SPV governance off-chain and anchor loan issuance and collateral state transitions directly on XRPL.
 
 This enables:
 - Deterministic on-chain collateral locking
@@ -37,44 +37,105 @@ This enables:
 - Publicly auditable credit state transitions
 - Reusable collateral instead of forced asset sales
 
-Rather than competing with traditional mortgage markets, Laplace defines a new category: protocol-based credit infrastructure for RWA. As tokenized real estate scales globally, reusable collateral becomes the next structural on-chain layer of capital efficiency. 
+Rather than competing with traditional mortgage markets, Laplace defines a new category: protocol-based credit infrastructure for RWAs. As tokenized real estate scales globally, reusable collateral becomes the next structural on-chain layer of capital efficiency. 
 
 Users can:
 
-1. [**Supply**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) liquidity to protocol-managed Vaults and earn yield
-2. [**Deposit**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/deposit/route.ts) collateral (RWA tokens) via conditional Escrow
-3. [**Borrow**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/borrow/route.ts) debt tokens through native Loan objects
-4. [**Repay**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/repay/route.ts) loans and **withdraw** collateral
-5. [**Liquidate**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/liquidate/route.ts) under-collateralized positions
+1. **Supply** liquidity to protocol-managed Vaults and earn yield
+2. **Deposit** collateral (RWA tokens) via conditional Escrow
+3. **Borrow** debt tokens through native Loan objects
+4. **Repay** loans and **withdraw** collateral
+5. **Liquidate** under-collateralized positions
 
-**What is verifiabley on-chain:**
+## 4. Application Walkthrough
+Live website: https://laplace-mvp.vercel.app/
+
+1. Generate a local wallet and get faucet tokens
+    - In the main menu, navigate to Finance → [Admin](https://laplace-mvp.vercel.app/admin)
+    - Under "Generate New Wallet", click "Generate + Fund XRP"
+    - Click "Request SAIL", "Request NYRA", and "Request RLUSD"
+2. Supply debt tokens (RLUSD) to the vault
+    - In the main menu, navigate to Finance → [Lend](https://laplace-mvp.vercel.app/lend)
+    - Under "Supply Actions" click "Supply to Pool"
+3. Deposit collateral tokens (SAIL)
+    - In the main menu, navigate to Finance → [Borrow](https://laplace-mvp.vercel.app/borrow)
+    - Select the loan pair "SAIL-RLUSD"
+    - Under "% Borrower Actions" select the "Deposit" action and click the "Deposit" button
+4. Borrow RLUSD
+    - Under "% Borrower Actions" select the "Borrow" action
+    - Enter a value smaller than the indicated "Max borrowable now"
+    - And click the "Borrow" button
+5. Repay loan
+    - Under "% Borrower Actions" select the "Repay" action
+    - Select the "Regular" payment type
+    - Click the "Repay" button
+    - To close the loan completely, select "Full Early"
+    - Click the "Repay" button
+6. Withdraw collateral
+    - Under "% Borrower Actions" select the "Withdraw" action
+    - Enter the full deposited token amount (see Your Position > Collateral > SAIL)
+    - Click the "Withdraw" button
+7. See the on-chain transaction history
+    - Click "View wallet on Explorer" at the bottom of the page
+
+### What is verifiable on-chain
 - Vault creation and deposit/withdraw operations
 - Loan origination, payments, and state changes
 - Escrow-based collateral locking with cryptographic conditions
 - All transactions persisted
 
-### Test Flow on Devnet
-Live website: https://laplace-mvp.vercel.app/
+## 5. Technology and XRPL Features
 
-1. Navigate to `/admin` -> Generate a local wallet, get all three faucet tokens
-2. Navigate to `/lend` → Supply debt tokens (RLUSD) to the vault
-3. Navigate to `/borrow` → Deposit collateral tokens(SAIL or NYRA), borrow RLUSD
-4. Repay loan using regular type. To close Loan completely, Repay with "full" afterwards
-5. Withdraw collateral with the exact amount you've deposited
-4. Check `onchain_transactions` table for tx hashes
+### Core Functions
 
----
+| Function | Description | App Link | Code Link |
+| --- | --- | --- | --- |
+| **Supply** | Supply liquidity to protocol-managed Vaults and earn yield | [/lend](https://laplace-mvp.vercel.app/lend) | [src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts](src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) |
+| **Deposit** | Deposit collateral (RWA tokens) via conditional Escrow | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/deposit/route.ts](src/app/api/lending/deposit/route.ts) |
+| **Borrow** | Borrow debt tokens through native Loan objects | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/borrow/route.ts](src/app/api/lending/borrow/route.ts) |
+| **Repay** | Repay loans and withdraw collateral | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/repay/route.ts](src/app/api/lending/repay/route.ts) |
+| **Liquidate** | Liquidate under-collateralized positions | — | [src/app/api/lending/liquidate/route.ts](src/app/api/lending/liquidate/route.ts) |
 
-## 4. XRPL and Core Functions
+### Vault (XLS-65)
 
-| XRPL Primitive | Transaction Types Used | Purpose in Laplace |
-|----------------|----------------------|-------------------|
-| **Vault** (XLS-65) | [`VaultCreate`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L170), [`VaultDeposit`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L195), [`VaultWithdraw`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L212) | Pool liquidity management; lenders deposit debt tokens, receive LP shares |
-| **Loan** (XLS-66) | [`LoanBrokerSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L275), [`LoanSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L328), [`LoanPay`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L399), [`LoanDelete`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/lending/service.ts#L1749) | Native loan objects track principal, interest, maturity on-ledger |
-| **Escrow** | [`EscrowCreate`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L123), [`EscrowFinish`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L262), [`EscrowCancel`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L300) | Conditional collateral locking with SHA-256 preimage conditions |
-| **TrustLine** | [`TrustSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/client/xrpl.ts#L171), [`Payment`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/tokens.ts#L88) | Token issuance and transfer for collateral/debt assets |
+Purpose: Pool liquidity management; lenders deposit debt tokens, receive LP shares
 
----
+| Transaction Type | Code Link |
+| --- | --- |
+| `VaultCreate` | [src/lib/xrpl/vault.ts#L170](src/lib/xrpl/vault.ts#L170) |
+| `VaultDeposit` | [src/lib/xrpl/vault.ts#L195](src/lib/xrpl/vault.ts#L195) |
+| `VaultWithdraw` | [src/lib/xrpl/vault.ts#L212](src/lib/xrpl/vault.ts#L212) |
+
+### Loan (XLS-66)
+
+Purpose: Native loan objects track principal, interest, maturity on-ledger
+
+| Transaction Type | Code Link |
+| --- | --- |
+| `LoanBrokerSet` | [src/lib/xrpl/loan.ts#L275](src/lib/xrpl/loan.ts#L275) |
+| `LoanSet` | [src/lib/xrpl/loan.ts#L328](src/lib/xrpl/loan.ts#L328) |
+| `LoanPay` | [src/lib/xrpl/loan.ts#L399](src/lib/xrpl/loan.ts#L399) |
+| `LoanDelete` | [src/lib/lending/service.ts#L1749](src/lib/lending/service.ts#L1749) |
+
+### Escrow
+
+Purpose: Conditional collateral locking with SHA-256 preimage conditions
+
+| Transaction Type | Code Link |
+| --- | --- |
+| `EscrowCreate` | [src/lib/xrpl/escrow.ts#L123](src/lib/xrpl/escrow.ts#L123) |
+| `EscrowFinish` | [src/lib/xrpl/escrow.ts#L262](src/lib/xrpl/escrow.ts#L262) |
+| `EscrowCancel` | [src/lib/xrpl/escrow.ts#L300](src/lib/xrpl/escrow.ts#L300) |
+
+### TrustLine
+
+Purpose: Token issuance and transfer for collateral/debt assets
+
+| Transaction Type | Code Link |
+| --- | --- |
+| `TrustSet` | [src/lib/client/xrpl.ts#L171](src/lib/client/xrpl.ts#L171) |
+| `Payment` | [src/lib/xrpl/tokens.ts#L88](src/lib/xrpl/tokens.ts#L88) |
+
 
 ## 5. Architecture at a Glance
 
@@ -135,7 +196,6 @@ flowchart LR
 - **Yield model:** suppliers provide capital and earn yield from borrower repayments.
 - **XRPL-backed rails:** issuance/transfers, escrow locks, loan state, and vault accounting settle on XRPL primitives.
 
----
 
 ## 6. Repository Structure
 
@@ -178,8 +238,6 @@ scripts/
 ├── enable-token-escrow.ts           # Issuer flags for escrow
 └── init-db.ts                       # Schema + seed data
 ```
-
----
 
 ## 7. DB ↔ Ledger Relationship
 
@@ -230,7 +288,6 @@ erDiagram
 - `markets.supply_vault_id` → XRPL Vault ledger entry
 - Every state-changing operation creates an `onchain_transactions` row with the tx hash
 
----
 
 ## 8. Lending Lifecycle (On-Chain)
 
@@ -273,7 +330,6 @@ sequenceDiagram
     API->>DB: Mark position LIQUIDATED
 ```
 
----
 
 ## 9. API Surface
 
@@ -287,6 +343,7 @@ sequenceDiagram
 | `/api/lending/withdraw` | POST | Release collateral via escrow finish |
 | `/api/lending/liquidate` | POST | Execute liquidation on unhealthy position |
 
+
 ### Supply Operations
 
 | Endpoint | Method | Purpose |
@@ -294,6 +351,7 @@ sequenceDiagram
 | `/api/lending/markets/[id]/supply` | POST | Deposit to vault, receive LP shares |
 | `/api/lending/markets/[id]/withdraw-supply` | POST | Withdraw from vault |
 | `/api/lending/markets/[id]/collect-yield` | POST | Claim accrued interest |
+
 
 ### Read Operations
 
@@ -304,7 +362,6 @@ sequenceDiagram
 | `/api/lending/prices` | GET | Oracle prices for LTV calculation |
 | `/api/lending/config` | GET | Protocol configuration |
 
----
 
 ## 10. Live Transaction Evidence
 
@@ -323,7 +380,6 @@ sequenceDiagram
 
 > `VaultCreate` was submitted by protocol account [`rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H`](https://devnet.xrpl.org/accounts/rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H) and creates vault `2332F4EF476D9C65EFF401FD4634B46B46ECD79027ACFC3B1F6DE628B90F2601` used by this borrower flow.
 
----
 
 ## 11. Quick Start
 
@@ -368,7 +424,7 @@ pnpm dev
 3. Repay loan and withdraw collateral
 4. Check `onchain_transactions` table for tx hashes
 
----
+
 
 ## 12. Limitations
 
@@ -392,7 +448,6 @@ pnpm dev
 - No rate limiting or authentication on API endpoints
 - Escrow preimages stored in DB (production will use HSM/KMS)
 
----
 
 ## 13. Roadmap
 
@@ -432,8 +487,6 @@ pnpm dev
 - Build network effects across issuers and lenders
 
 
----
-
 ## 14. Tech Stack
 
 | Layer | Technology |
@@ -444,7 +497,6 @@ pnpm dev
 | Blockchain | XRPL Devnet, xrpl.js v4.5 |
 | Math | Decimal.js (arbitrary precision) |
 
----
 
 ## 15. Market Opportunity
 
@@ -454,7 +506,7 @@ Tokenized real-world assets are projected to reach multi-trillion-dollar scale b
 
 However, tokenization today enables ownership, not capital efficiency.
 
-Most tokenized real estate remains static equity. Liquidity requires asset sale rather than collateral reuse. This creates a structural gap: RWA lacks a credit layer.
+Most tokenized real estate remains static equity. Liquidity requires asset sale rather than collateral reuse. This creates a structural gap: RWAs lack a credit layer.
 
 Japan represents a uniquely attractive entry market:
 - Household financial assets exceed ¥2,200 trillion (~$14-15 trillion).
@@ -468,7 +520,6 @@ As RWA markets scale globally, the bottleneck shifts from token issuance to cred
 
 Laplace targets this structural shift by building the on-chain credit layer for global real estate on XRPL.
 
----
 
 ## 16. Business Model
 
@@ -482,7 +533,7 @@ Laplace operates as protocol-based credit infrastructure rather than a balance-s
 
 This structure enables recurring, infrastructure-level revenue without deploying proprietary lending capital.
 
----
+
 
 ## 17. Compliance Framework
 
@@ -490,7 +541,7 @@ Laplace is structured to align with existing regulatory frameworks through clear
 
 ### Japan
 
-- RWA issued by Laplace are distributed to retail investors through a licensed Type II Financial Instruments Business (FIBO) partner.
+- RWAs issued by Laplace are distributed to retail investors through a licensed Type II Financial Instruments Business (FIBO) partner.
 - Tokenized interests are treated as deemed securities under Japanese law.
 - All regulated investor solicitation, disclosure, and distribution activities are conducted by the licensed entity.
 
@@ -511,13 +562,12 @@ Laplace:
 
 Regulatory responsibilities are clearly allocated to appropriate licensed entities, ensuring compliance while maintaining protocol-based credit infrastructure on-chain.
 
----
 
 ## 18. Team
 
 ### Yusuke Hirota - CEO
 
-Yusuke has over 10 years of experience leading global growth strategy, including at Amazon, where he contributed to scaling cross-border platform initiatives. He is building Laplace as the "Amazon for RWA" - a global platform that connects issuers, lenders, and investors into a unified ecosystem for real-world assets and reusable credit infrastructure.
+Yusuke has over 10 years of experience leading global growth strategy, including at Amazon, where he contributed to scaling cross-border platform initiatives. He is building Laplace as the "Amazon for RWAs" - a global platform that connects issuers, lenders, and investors into a unified ecosystem for real-world assets and reusable credit infrastructure.
 
 LinkedIn: https://linkedin.com/in/yusuke-hirota-204a01150/
 
