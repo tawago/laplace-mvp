@@ -1,6 +1,6 @@
 # Laplace: A Luxury RWA Marketplace with Native XRPL Lending
 
-Laplace is a tokenized luxury real estate marketplace and lending protocol that leverages native XRPL transaction types (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience supported by RWA tokens. Users can:
+Laplace is a tokenized luxury real estate marketplace and lending protocol that leverages native XRPL transaction types ([XLS-65 Vaults](https://opensource.ripple.com/docs/xls-65-single-asset-vault), [XLS-66 Loans](https://opensource.ripple.com/docs/xls-66-lending-protocol)) to create a fully on-chain lending experience supported by RWA tokens. Users can:
 
 1. **Supply** liquidity to protocol-managed Vaults and earn yield
 2. **Deposit** collateral (RWA tokens) via conditional Escrow
