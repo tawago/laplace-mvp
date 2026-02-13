@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Copy, ExternalLink, Loader2, TrendingUp, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { InstitutionalUnderwriting } from './components/institutional-underwriting';
+
 import {
   checkTrustLine,
   getVaultShareBalance,
@@ -697,7 +699,7 @@ export default function LenderPage() {
                     onClick={handleWithdrawSupply}
                     disabled={!walletReady || loadingAction === 'withdraw-supply'}
                     variant="outline"
-                    className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                    className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900"
                   >
                     {loadingAction === 'withdraw-supply' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Withdraw Supply
@@ -706,7 +708,7 @@ export default function LenderPage() {
                     onClick={handleWithdrawAll}
                     disabled={!walletReady || !position || position.supplyAmount <= 0 || loadingAction === 'withdraw-all'}
                     variant="outline"
-                    className="border-rose-300 bg-white text-rose-700 hover:bg-rose-50"
+                    className="border-rose-300 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
                   >
                     {loadingAction === 'withdraw-all' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Withdraw Full Position
@@ -771,6 +773,8 @@ export default function LenderPage() {
             )}
           </CardContent>
         </Card>
+
+        <InstitutionalUnderwriting selectedMarketName={selectedMarket?.name} explorerUrl={config?.explorerUrl} />
 
         {config?.explorerUrl && wallet?.address && (
           <div className="pb-6 text-center">
