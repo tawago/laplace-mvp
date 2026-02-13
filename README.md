@@ -8,6 +8,8 @@ Laplace is a tokenized luxury real estate marketplace and lending protocol that 
 4. **Repay** loans and **withdraw** collateral
 5. **Liquidate** under-collateralized positions
 
+![Laplace On-Chain Credit for RWAs](app-screenshot.png)
+
 ## Application Walkthrough
 Live website: https://laplace-mvp.vercel.app/
 
