@@ -11,12 +11,33 @@ Laplace is a tokenized luxury real estate marketplace and lending protocol that 
 ## Application Walkthrough
 Live website: https://laplace-mvp.vercel.app/
 
-1. Navigate to `/admin` -> Generate a local wallet, get all three faucet tokens
-2. Navigate to `/lend` → Supply debt tokens (RLUSD) to the vault
-3. Navigate to `/borrow` → Deposit collateral tokens(SAIL or NYRA), borrow RLUSD
-4. Repay loan using regular type. To close Loan completely, Repay with "full" afterwards
-5. Withdraw collateral with the exact amount you've deposited
-4. Check `onchain_transactions` table for tx hashes
+1. Generate a local wallet and get faucet tokens
+    - In the main menu, navigate to Finance → [Admin](https://laplace-mvp.vercel.app/admin)
+    - Under "Generate New Wallet", click "Generate + Fund XRP"
+    - Click "Request SAIL", "Request NYRA", and "Request RLUSD"
+2. Supply debt tokens (RLUSD) to the vault
+    - In the main menu, navigate to Finance → [Lend](https://laplace-mvp.vercel.app/lend)
+    - Under "Supply Actions" click "Supply to Pool"
+3. Deposit collateral tokens (SAIL)
+    - In the main menu, navigate to Finance → [Borrow](https://laplace-mvp.vercel.app/borrow)
+    - Select the loan pair "SAIL-RLUSD"
+    - Under "% Borrower Actions" select the "Deposit" action and click the "Deposit" button
+4. Borrow RLUSD
+    - Under "% Borrower Actions" select the "Borrow" action
+    - Enter a value smaller than the indicated "Max borrowable now"
+    - And click the "Borrow" button
+5. Repay loan
+    - Under "% Borrower Actions" select the "Repay" action
+    - Select the "Regular" payment type
+    - Click the "Repay" button
+    - To close the loan completely, select "Full Early"
+    - Click the "Repay" button
+6. Withdraw collateral
+    - Under "% Borrower Actions" select the "Withdraw" action
+    - Enter the full deposited token amount (see Your Position > Collateral > SAIL)
+    - Click the "Withdraw" button
+7. See the on-chain transaction history
+    - Click "View wallet on Explorer" at the bottom of the page
 
 ## What is verifiable on-chain
 - Vault creation and deposit/withdraw operations
