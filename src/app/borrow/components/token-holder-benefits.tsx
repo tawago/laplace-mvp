@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { useMemo } from 'react';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ExternalLink, Sparkles } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 
 interface TokenHolderMockData {
   property: {
@@ -20,12 +22,65 @@ interface TokenHolderMockData {
     distributionFrequency: string;
     lastDistributionDate: string;
     nextDistributionDate: string;
+    distributionStartDate: string;
   };
   benefits: {
     rentalDistribution: boolean;
     propertyAppreciation: boolean;
     votingRights: boolean;
     priorityAccess: boolean;
+  };
+}
+
+interface DistributionHistoryPoint {
+  week: string;
+  amount: number;
+  date: string;
+}
+
+function buildDistributionProjection(estimatedAnnualEarnings: number, distributionStartDate: string, weeks = 35) {
+  const weeklyEarnings = estimatedAnnualEarnings / 52;
+  const startDate = new Date(distributionStartDate);
+  const seedSource = `${estimatedAnnualEarnings.toFixed(4)}-${distributionStartDate}-${weeks}`;
+  const baseSeed = Array.from(seedSource).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0) >>> 0;
+
+  const randomAt = (index: number) => {
+    let seed = (baseSeed + index * 0x9e3779b9) >>> 0;
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return ((seed >>> 0) % 10_000) / 10_000;
+  };
+
+  const rawWeights = Array.from({ length: weeks }, (_, i) => {
+    const seasonal = 1 + 0.08 * Math.sin(i * 0.7) + 0.04 * Math.cos(i * 0.31);
+    const randomJitter = 0.96 + randomAt(i) * 0.18;
+    return seasonal * randomJitter;
+  });
+  const meanWeight = rawWeights.reduce((sum, weight) => sum + weight, 0) / weeks;
+
+  const distributionHistory: DistributionHistoryPoint[] = rawWeights.map((weight, i) => {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + i * 7);
+
+    const normalizedWeight = weight / meanWeight;
+    const amount = Math.round(weeklyEarnings * normalizedWeight * 100) / 100;
+
+    return {
+      week: `W${i + 1}`,
+      amount,
+      date: date.toISOString().split('T')[0],
+    };
+  });
+
+  const totalDistributed = distributionHistory.reduce((sum, week) => sum + week.amount, 0);
+  const averageWeeklyDistribution = distributionHistory.length ? totalDistributed / distributionHistory.length : 0;
+
+  return {
+    weeklyEarnings,
+    distributionHistory,
+    averageWeeklyDistribution,
+    totalDistributed,
   };
 }
 
@@ -40,9 +95,10 @@ const TOKEN_HOLDER_MOCK_DATA: Record<string, TokenHolderMockData> = {
       totalSupply: 10_000,
       netAnnualRentalIncome: 80_000,
       yieldPerToken: 8,
-      distributionFrequency: 'Quarterly',
-      lastDistributionDate: '2025-12-15',
-      nextDistributionDate: '2026-03-15',
+      distributionFrequency: 'Weekly',
+      lastDistributionDate: '2026-02-09',
+      nextDistributionDate: '2026-02-16',
+      distributionStartDate: '2025-06-01',
     },
     benefits: {
       rentalDistribution: true,
@@ -61,9 +117,10 @@ const TOKEN_HOLDER_MOCK_DATA: Record<string, TokenHolderMockData> = {
       totalSupply: 15_000,
       netAnnualRentalIncome: 120_000,
       yieldPerToken: 8,
-      distributionFrequency: 'Quarterly',
-      lastDistributionDate: '2025-12-20',
-      nextDistributionDate: '2026-03-20',
+      distributionFrequency: 'Weekly',
+      lastDistributionDate: '2026-02-09',
+      nextDistributionDate: '2026-02-16',
+      distributionStartDate: '2025-06-01',
     },
     benefits: {
       rentalDistribution: true,
@@ -90,7 +147,17 @@ export function TokenHolderBenefits({ selectedMarketName, explorerUrl, walletBal
 
   const totalTokenHoldings = walletBalance + collateralDeposited;
   const estimatedAnnualEarnings = currentMockData.tokenEconomics.yieldPerToken * totalTokenHoldings;
-  const estimatedQuarterlyEarnings = estimatedAnnualEarnings / 4;
+  const { weeklyEarnings, distributionHistory, averageWeeklyDistribution, totalDistributed } = useMemo(
+    () => buildDistributionProjection(estimatedAnnualEarnings, currentMockData.tokenEconomics.distributionStartDate, 35),
+    [estimatedAnnualEarnings, currentMockData.tokenEconomics.distributionStartDate]
+  );
+
+  const distributionChartConfig = {
+    distribution: {
+      label: 'Distribution',
+      color: '#10b981',
+    },
+  } satisfies ChartConfig;
 
   const currencyFormatter = useMemo(
     () =>
@@ -109,6 +176,16 @@ export function TokenHolderBenefits({ selectedMarketName, explorerUrl, walletBal
         currency: 'USD',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
+      }),
+    []
+  );
+
+  const dateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
       }),
     []
   );
@@ -165,7 +242,7 @@ export function TokenHolderBenefits({ selectedMarketName, explorerUrl, walletBal
             <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
               <p className="text-xs text-zinc-500 dark:text-zinc-400">Last Distribution Date</p>
               <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                {new Date(currentMockData.tokenEconomics.lastDistributionDate).toLocaleDateString()}
+                {dateFormatter.format(new Date(currentMockData.tokenEconomics.lastDistributionDate))}
               </p>
             </div>
             <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
@@ -184,7 +261,13 @@ export function TokenHolderBenefits({ selectedMarketName, explorerUrl, walletBal
                 ) : null}
               </div>
               <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                {new Date(currentMockData.tokenEconomics.nextDistributionDate).toLocaleDateString()}
+                {dateFormatter.format(new Date(currentMockData.tokenEconomics.nextDistributionDate))}
+              </p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Distribution Started</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                {dateFormatter.format(new Date(currentMockData.tokenEconomics.distributionStartDate))}
               </p>
             </div>
           </div>
@@ -215,8 +298,43 @@ export function TokenHolderBenefits({ selectedMarketName, explorerUrl, walletBal
               <p className="mt-1 text-lg font-semibold text-emerald-600">{earningsFormatter.format(estimatedAnnualEarnings)}</p>
             </div>
             <div className="rounded-xl bg-white/70 p-3 dark:bg-zinc-900/70">
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">Estimated Quarterly Earnings</p>
-              <p className="mt-1 text-lg font-semibold text-emerald-600">{earningsFormatter.format(estimatedQuarterlyEarnings)}</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Estimated Weekly Earnings</p>
+              <p className="mt-1 text-lg font-semibold text-emerald-600">{earningsFormatter.format(weeklyEarnings)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40">
+        <CardHeader>
+          <CardTitle className="text-base text-zinc-900 dark:text-zinc-100">Distribution History</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ChartContainer config={distributionChartConfig} className="h-[200px] w-full">
+            <BarChart data={distributionHistory}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="week" tickLine={false} axisLine={false} interval={4} />
+              <YAxis tickLine={false} axisLine={false} tickFormatter={(value) => `$${value}`} />
+              <ChartTooltip
+                content={<ChartTooltipContent />}
+                labelFormatter={(label, payload) => {
+                  const date = payload?.[0]?.payload?.date;
+                  return date ? `${label} (${dateFormatter.format(new Date(date))})` : label;
+                }}
+                formatter={(value: number) => [earningsFormatter.format(value), 'Distribution']}
+              />
+              <Bar dataKey="amount" fill="var(--color-distribution)" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ChartContainer>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Average Weekly Distribution</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{earningsFormatter.format(averageWeeklyDistribution)}</p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Total Distributed (35 weeks)</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{earningsFormatter.format(totalDistributed)}</p>
             </div>
           </div>
         </CardContent>
