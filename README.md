@@ -1,12 +1,8 @@
-# Laplace: Native XRPL Lending Protocol for RWA
-
-> **JFIIP Hackathon Submission** – A proof-of-concept DeFi lending protocol using native XRPL primitives (Vault, Loan, Escrow) to enable collateralized borrowing against tokenized real-world assets.
+# Laplace: Luxury RWA Marketplace with Native XRPL Lending Protocol
 
 ---
 
-## TL;DR
-
-Laplace is a lending protocol that leverages **native XRPL transaction types** introduced in recent devnet amendments (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience. Users can:
+Laplace is a luxury RWA marketplace and lending protocol that leverages native XRPL transaction types introduced in recent devnet amendments (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience. Users can:
 
 1. **Supply** liquidity to protocol-managed Vaults and earn yield
 2. **Deposit** collateral (RWA tokens) via conditional Escrow
@@ -14,15 +10,25 @@ Laplace is a lending protocol that leverages **native XRPL transaction types** i
 4. **Repay** loans and **withdraw** collateral
 5. **Liquidate** under-collateralized positions
 
-**What is verifiably on-chain:**
+**What is verifiabley on-chain:**
 - Vault creation and deposit/withdraw operations
 - Loan origination, payments, and state changes
 - Escrow-based collateral locking with cryptographic conditions
-- All transactions persisted with hashes linking to devnet explorer
+- All transactions persisted
+
+### Test Flow on Devnet
+Live website: https://laplace-mvp.vercel.app/
+
+1. Navigate to `/admin` -> Generate a local wallet, get all three faucet tokens
+2. Navigate to `/lend` → Supply debt tokens (RLUSD) to the vault
+3. Navigate to `/borrow` → Deposit collateral tokens(SAIL or NYRA), borrow RLUSD
+4. Repay loan using regualar type. To close Loan completely, Repay with "full" afterwards
+5. Withdraw collateral with the exact amount you've deposited
+4. Check `onchain_transactions` table for tx hashes
 
 ---
 
-## What We Built
+## XRPL and Core Functions
 
 | XRPL Primitive | Transaction Types Used | Purpose in Laplace |
 |----------------|----------------------|-------------------|
@@ -86,7 +92,7 @@ flowchart LR
     CREDIT --> LOAN
 ```
 
-**Key boundaries:**
+**Key areas:**
 - **Tokenization first:** Laplace issues and distributes RWA tokens representing real-world exposure.
 - **Collateralized borrowing:** borrowers lock those RWA tokens to access loan liquidity.
 - **Yield model:** suppliers provide capital and earn yield from borrower repayments.
@@ -327,36 +333,36 @@ pnpm dev
 
 ## Limitations
 
-### Devnet-Only Amendments
+### XRPL Devnet-Only Amendments
 
-| Amendment | Status | Impact |
-|-----------|--------|--------|
-| XLS-65 (SingleAssetVault) | Devnet only | Vault operations unavailable on mainnet |
-| XLS-66 (Loan) | Devnet only | Loan objects unavailable on mainnet |
+| Amendment | Status |
+|-----------|--------|
+| XLS-65 (SingleAssetVault) | Devnet only |
+| XLS-66 (Loan) | Devnet only |
 
 ### Known Issues
 
 - **`tecINVARIANT_FAILED`**: Occasionally occurs on devnet under load. Retry logic mitigates most cases.
-- **xrpl.js counter-party multisig gap**: The library lacks native support for broker co-signing patterns required by XLS-66. Current workaround uses backend wallet as sole signer.
-- **No real oracle**: Price feeds are mock values in `price_oracle` table. Production would require Chainlink/Band integration.
-- **Single-market PoC**: Currently supports one collateral/debt pair. Multi-market expansion is architectural but not implemented.
+- **xrpl.js counter-party multisig gap**: The library lacks native support for broker co-signing patterns required by XLS-66. Current workaround uses the backenduses backend wallet as the sole signer.
+- Price feeds are mock values in the `price_oracle` table. Production requires Chainlink/Band integration.
+- **Fixed-market**: Currently supports predefined two collateral/debt pair. Multi-market expansion is architectural but not implemented.
 
 ### Security Considerations (PoC Only)
 
-- Borrower seeds passed via API for demo convenience (production would use client-side signing)
+- Borrower seeds passed via API for demo convenience (production will use client-side signing)
 - No rate limiting or authentication on API endpoints
-- Escrow preimages stored in DB (production would use HSM/KMS)
+- Escrow preimages stored in DB (production will use HSM/KMS)
 
 ---
 
 ## Roadmap
 
-### Mainnet Readiness
+### Mainnet
 
 1. **Wait for amendments**: XLS-65 and XLS-66 must be enabled on mainnet
 2. **Client-side signing**: Remove seed transmission, use wallet adapters (Xumm, Crossmark)
 3. **Oracle integration**: Connect to price feeds (Pyth, Chainlink via bridge)
-4. **Audit**: Smart contract equivalent review of service logic
+4. **Audit**: Third party security review of service logic
 
 ### Feature Expansion
 
@@ -377,8 +383,3 @@ pnpm dev
 | Blockchain | XRPL Devnet, xrpl.js v4.5 |
 | Math | Decimal.js (arbitrary precision) |
 
-
-<p align="center">
-  <strong>Built for JFIIP Hackathon 2025</strong><br/>
-  <em>Demonstrating native XRPL DeFi primitives for real-world asset lending</em>
-</p>
