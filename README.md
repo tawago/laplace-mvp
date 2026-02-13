@@ -11,6 +11,8 @@ This MVP runs entirely on XRPL Devnet and integrates XRPL-native primitives incl
 - Multi-signature enforcement
 - On-chain collateral state transitions
 
+---
+
 ## 2. Problem
 
 Real estate is the largest asset class in the world - over $350 trillion - yet once tokenized, it remains financially static. Ownership has been digitized. Collateral has not.
@@ -22,6 +24,8 @@ Tokenized real estate today cannot reliably function as reusable collateral acro
 - Inconsistent cross-border enforceability
 
 As a result, liquidity requires asset sale rather than collateral reuse. The structural bottleneck in RWA markets is not token issuance - it is credit infrastructure.
+
+---
 
 ## 3. Solution
 
@@ -440,6 +444,8 @@ As RWA markets scale globally, the bottleneck shifts from token issuance to cred
 
 Laplace targets this structural shift by building the on-chain credit layer for global real estate on XRPL.
 
+---
+
 ## 16. Business Model
 
 Laplace operates as protocol-based credit infrastructure rather than a balance-sheet lender. The company captures value at the infrastructure layer, scaling with the number of onboarded assets, participating lenders, and total reusable collateral volume. The model is asset-light, capital-efficient, and designed to benefit from network effects as tokenized real estate adoption expands globally.
@@ -451,6 +457,8 @@ Laplace operates as protocol-based credit infrastructure rather than a balance-s
 - Institutional API & registry access fees (for lenders accessing verified collateral and credit state data)
 
 This structure enables recurring, infrastructure-level revenue without deploying proprietary lending capital.
+
+---
 
 ## 17. Compliance Framework
 
@@ -479,6 +487,8 @@ Laplace:
 
 Regulatory responsibilities are clearly allocated to appropriate licensed entities, ensuring compliance while maintaining protocol-based credit infrastructure on-chain.
 
+---
+
 ## 18. Business Roadmap
 
 ### Phase 1 - Validate Model
@@ -502,6 +512,8 @@ Regulatory responsibilities are clearly allocated to appropriate licensed entiti
 ### Long-Term Vision
 
 Laplace scales by onboarding third-party RWA and institutional lenders, positioning itself as the standardized credit layer for tokenized global real estate.
+
+---
 
 ## 19. Team
 
