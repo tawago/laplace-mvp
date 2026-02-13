@@ -233,7 +233,13 @@ export default function LenderPage() {
         }
 
         setConfig(payload.data);
-        const firstMarket = payload.data.markets[0];
+        const markets = payload.data.markets as MarketConfig[];
+        const sailMarket = markets.find((market) => {
+          const nameHasSail = market.name.toUpperCase().includes('SAIL');
+          const debtIsSail = getTokenSymbol(market.debtCurrency).toUpperCase() === 'SAIL';
+          return nameHasSail || debtIsSail;
+        });
+        const firstMarket = sailMarket ?? markets[0];
         if (firstMarket) {
           setSelectedMarketId(firstMarket.id);
         }

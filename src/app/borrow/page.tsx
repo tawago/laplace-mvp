@@ -213,8 +213,15 @@ export default function LendingPage() {
         }
 
         setConfig(payload.data);
-        if (payload.data.markets.length > 0) {
-          setSelectedMarketId(payload.data.markets[0].id);
+        const markets = payload.data.markets as Market[];
+        if (markets.length > 0) {
+          const sailMarket = markets.find((market) => {
+            const nameHasSail = market.name.toUpperCase().includes('SAIL');
+            const collateralIsSail = getTokenSymbol(market.collateralCurrency).toUpperCase() === 'SAIL';
+            const debtIsSail = getTokenSymbol(market.debtCurrency).toUpperCase() === 'SAIL';
+            return nameHasSail || collateralIsSail || debtIsSail;
+          });
+          setSelectedMarketId((sailMarket ?? markets[0]).id);
         }
 
         const seed = loadWalletSeed();
