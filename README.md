@@ -33,7 +33,6 @@ Live website: https://laplace-mvp.vercel.app/
 | **Escrow** | [`EscrowCreate`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L123), [`EscrowFinish`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L262), [`EscrowCancel`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L300) | Conditional collateral locking with SHA-256 preimage conditions |
 | **TrustLine** | [`TrustSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/client/xrpl.ts#L171), [`Payment`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/tokens.ts#L88) | Token issuance and transfer for collateral/debt assets |
 
----
 
 ## Architecture at a Glance
 
@@ -94,8 +93,6 @@ flowchart LR
 - **Yield model:** suppliers provide capital and earn yield from borrower repayments.
 - **XRPL-backed rails:** issuance/transfers, escrow locks, loan state, and vault accounting settle on XRPL primitives.
 
----
-
 ## Repository Structure
 
 ```
@@ -137,8 +134,6 @@ scripts/
 ├── enable-token-escrow.ts           # Issuer flags for escrow
 └── init-db.ts                       # Schema + seed data
 ```
-
----
 
 ## DB ↔ Ledger Relationship
 
@@ -189,8 +184,6 @@ erDiagram
 - `markets.supply_vault_id` → XRPL Vault ledger entry
 - Every state-changing operation creates an `onchain_transactions` row with the tx hash
 
----
-
 ## Lending Lifecycle (On-Chain)
 
 ```mermaid
@@ -232,7 +225,6 @@ sequenceDiagram
     API->>DB: Mark position LIQUIDATED
 ```
 
----
 
 ## API Surface
 
@@ -246,6 +238,7 @@ sequenceDiagram
 | `/api/lending/withdraw` | POST | Release collateral via escrow finish |
 | `/api/lending/liquidate` | POST | Execute liquidation on unhealthy position |
 
+
 ### Supply Operations
 
 | Endpoint | Method | Purpose |
@@ -253,6 +246,7 @@ sequenceDiagram
 | `/api/lending/markets/[id]/supply` | POST | Deposit to vault, receive LP shares |
 | `/api/lending/markets/[id]/withdraw-supply` | POST | Withdraw from vault |
 | `/api/lending/markets/[id]/collect-yield` | POST | Claim accrued interest |
+
 
 ### Read Operations
 
@@ -263,7 +257,6 @@ sequenceDiagram
 | `/api/lending/prices` | GET | Oracle prices for LTV calculation |
 | `/api/lending/config` | GET | Protocol configuration |
 
----
 
 ## Live Transaction Evidence
 
@@ -282,7 +275,7 @@ sequenceDiagram
 
 > `VaultCreate` was submitted by protocol account [`rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H`](https://devnet.xrpl.org/accounts/rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H) and creates vault `2332F4EF476D9C65EFF401FD4634B46B46ECD79027ACFC3B1F6DE628B90F2601` used by this borrower flow.
 
----
+
 
 ## Quick Start
 
@@ -327,7 +320,7 @@ pnpm dev
 3. Repay loan and withdraw collateral
 4. Check `onchain_transactions` table for tx hashes
 
----
+
 
 ## Limitations
 
@@ -351,7 +344,7 @@ pnpm dev
 - No rate limiting or authentication on API endpoints
 - Escrow preimages stored in DB (production will use HSM/KMS)
 
----
+
 
 ## Roadmap
 
@@ -369,7 +362,7 @@ pnpm dev
 - Governance token for protocol parameters
 - Cross-chain collateral (IBC/Axelar bridge integration)
 
----
+
 
 ## Tech Stack
 
