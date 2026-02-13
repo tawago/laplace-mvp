@@ -271,18 +271,20 @@ sequenceDiagram
 
 ## Live Transaction Evidence
 
-> Account: [`rMZQDaXsSorFv2s9qkNyoFxPfYAzvwjgC9`](https://devnet.xrpl.org/accounts/rMZQDaXsSorFv2s9qkNyoFxPfYAzvwjgC9)
+> Borrower & Lender Account: [`r3KFqgrvzkyFZ916TKSyz4N9qdmnRwhTxS`](https://devnet.xrpl.org/accounts/r3KFqgrvzkyFZ916TKSyz4N9qdmnRwhTxS)
 
 | Operation | Tx Type | Hash | Explorer | Result |
 |-----------|---------|------|----------|--------|
-| Vault Creation | `VaultCreate` | `A1B2C3...` | [View](https://devnet.xrpl.org/transactions/A1B2C3) | `tesSUCCESS` |
-| Supply Deposit | `VaultDeposit` | `D4E5F6...` | [View](https://devnet.xrpl.org/transactions/D4E5F6) | `tesSUCCESS` |
-| Collateral Escrow | `EscrowCreate` | `G7H8I9...` | [View](https://devnet.xrpl.org/transactions/G7H8I9) | `tesSUCCESS` |
-| Loan Origination | `LoanSet` | `J0K1L2...` | [View](https://devnet.xrpl.org/transactions/J0K1L2) | `tesSUCCESS` |
-| Loan Payment | `LoanPay` | `M3N4O5...` | [View](https://devnet.xrpl.org/transactions/M3N4O5) | `tesSUCCESS` |
-| Collateral Release | `EscrowFinish` | `P6Q7R8...` | [View](https://devnet.xrpl.org/transactions/P6Q7R8) | `tesSUCCESS` |
+| Vault Creation | `VaultCreate` | `145967282D69B8F660A0F372460F0E978B57F55E47CAF3B9CFE5E39738426DB5` | [View](https://devnet.xrpl.org/transactions/145967282D69B8F660A0F372460F0E978B57F55E47CAF3B9CFE5E39738426DB5) | `tesSUCCESS` |
+| Supply Deposit | `VaultDeposit` | `C6C6BA434B4E3949D0F3EE5786C1607192A8A8E3280E449591CFE856A9ADBF45` | [View](https://devnet.xrpl.org/transactions/C6C6BA434B4E3949D0F3EE5786C1607192A8A8E3280E449591CFE856A9ADBF45) | `tesSUCCESS` |
+| Collateral Escrow | `EscrowCreate` | `2488F0BBBABFDB5EEC67C79EB04D15B4E7B843CD476ABB0336263B18AF13F39F` | [View](https://devnet.xrpl.org/transactions/2488F0BBBABFDB5EEC67C79EB04D15B4E7B843CD476ABB0336263B18AF13F39F) | `tesSUCCESS` |
+| Loan Origination | `LoanSet` | `FE41C7FC8CC30CAD2C725BDE70C2D75D08AD0A5FB4C74DEE9E8F382ECD1E6335` | [View](https://devnet.xrpl.org/transactions/FE41C7FC8CC30CAD2C725BDE70C2D75D08AD0A5FB4C74DEE9E8F382ECD1E6335) | `tesSUCCESS` |
+| Loan Payment | `LoanPay` | `5DFD04FBC22F057C1117F4A5DAD4D65931A17F58DEBBD9550561BDCCDF6EFD64` | [View](https://devnet.xrpl.org/transactions/5DFD04FBC22F057C1117F4A5DAD4D65931A17F58DEBBD9550561BDCCDF6EFD64) | `tesSUCCESS` |
+| Loan Closure | `LoanDelete` | `FFB49CA90907DC2D3C27CDAFB057E5B43E2AC0A2D3A7129317E42E4C9D988EAB` | [View](https://devnet.xrpl.org/transactions/FFB49CA90907DC2D3C27CDAFB057E5B43E2AC0A2D3A7129317E42E4C9D988EAB) | `tesSUCCESS` |
+| Collateral Release | `EscrowFinish` | `A11ACC77D4930ED213DE64938C3BDBE7782184D3CD738E1BC9BDECBEA50989B9` | [View](https://devnet.xrpl.org/transactions/A11ACC77D4930ED213DE64938C3BDBE7782184D3CD738E1BC9BDECBEA50989B9) | `tesSUCCESS` |
+| Supply Withdraw | `VaultWithdraw` | `EC00FC1F2532FA21DBDE1424C77EE7BD289350E31A11C71D270612A2D8251EC3` | [View](https://devnet.xrpl.org/transactions/EC00FC1F2532FA21DBDE1424C77EE7BD289350E31A11C71D270612A2D8251EC3) | `tesSUCCESS` |
 
-> **Note:** Replace placeholder hashes with actual transaction hashes from your testing session. Query the database: `SELECT tx_hash, tx_type, tx_result FROM onchain_transactions ORDER BY observed_at DESC LIMIT 20;`
+> `VaultCreate` was submitted by protocol account [`rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H`](https://devnet.xrpl.org/accounts/rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H) and creates vault `2332F4EF476D9C65EFF401FD4634B46B46ECD79027ACFC3B1F6DE628B90F2601` used by this borrower flow.
 
 ---
 
@@ -382,4 +384,3 @@ pnpm dev
 | Database | Neon Postgres, Drizzle ORM |
 | Blockchain | XRPL Devnet, xrpl.js v4.5 |
 | Math | Decimal.js (arbitrary precision) |
-
