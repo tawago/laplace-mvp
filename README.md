@@ -2,11 +2,11 @@
 
 ## 1. Project Overview
 
-Laplace offers a protocol-based credit layer for global real estate RWA by enabling tokenized property to function as reusable collateral and executing credit lines directly on the XRP Ledger.
+Laplace offers a protocol-based credit layer for global real estate RWAs by enabling tokenized property to function as reusable collateral and allowing the execution of credit lines directly on the XRP Ledger.
 
 ![Laplace On-Chain Credit for Global Real Estate](app-screenshot.png)
 
-This MVP runs entirely on XRPL Devnet and leverages native XRPL transaction types ([XLS-65 Vaults](https://opensource.ripple.com/docs/xls-65-single-asset-vault), [XLS-66 Loans](https://opensource.ripple.com/docs/xls-66-lending-protocol)) to create a fully on-chain lending experience supported by RWA tokens including:
+This MVP runs entirely on XRPL Devnet and leverages native XRPL transaction types ([XLS-65 Vaults](https://opensource.ripple.com/docs/xls-65-single-asset-vault) and [XLS-66 Loans](https://opensource.ripple.com/docs/xls-66-lending-protocol)) to create a fully on-chain lending experience supported by RWA tokens including:
 - Single Asset Vault (SAV)
 - Loan object
 - Escrow-based collateral locking
@@ -26,6 +26,7 @@ Tokenized real estate today cannot reliably function as reusable collateral acro
 
 As a result, liquidity requires asset sale rather than collateral reuse. The structural bottleneck in RWA markets is not token issuance - it is credit infrastructure.
 
+
 ## 3. Solution
 
 Laplace offers the missing credit layer for global real estate RWAs. We standardize SPV governance off-chain and anchor loan issuance and collateral state transitions directly on XRPL.
@@ -36,7 +37,7 @@ This enables:
 - Publicly auditable credit state transitions
 - Reusable collateral instead of forced asset sales
 
-Rather than competing with traditional mortgage markets, Laplace defines a new category: protocol-based credit infrastructure for RWA. As tokenized real estate scales globally, reusable collateral becomes the next structural on-chain layer of capital efficiency. 
+Rather than competing with traditional mortgage markets, Laplace defines a new category: protocol-based credit infrastructure for RWAs. As tokenized real estate scales globally, reusable collateral becomes the next structural on-chain layer of capital efficiency. 
 
 Users can:
 
@@ -505,7 +506,7 @@ Tokenized real-world assets are projected to reach multi-trillion-dollar scale b
 
 However, tokenization today enables ownership, not capital efficiency.
 
-Most tokenized real estate remains static equity. Liquidity requires asset sale rather than collateral reuse. This creates a structural gap: RWA lacks a credit layer.
+Most tokenized real estate remains static equity. Liquidity requires asset sale rather than collateral reuse. This creates a structural gap: RWAs lack a credit layer.
 
 Japan represents a uniquely attractive entry market:
 - Household financial assets exceed ¥2,200 trillion (~$14-15 trillion).
@@ -540,7 +541,7 @@ Laplace is structured to align with existing regulatory frameworks through clear
 
 ### Japan
 
-- RWA issued by Laplace are distributed to retail investors through a licensed Type II Financial Instruments Business (FIBO) partner.
+- RWAs issued by Laplace are distributed to retail investors through a licensed Type II Financial Instruments Business (FIBO) partner.
 - Tokenized interests are treated as deemed securities under Japanese law.
 - All regulated investor solicitation, disclosure, and distribution activities are conducted by the licensed entity.
 
@@ -566,7 +567,7 @@ Regulatory responsibilities are clearly allocated to appropriate licensed entiti
 
 ### Yusuke Hirota - CEO
 
-Yusuke has over 10 years of experience leading global growth strategy, including at Amazon, where he contributed to scaling cross-border platform initiatives. He is building Laplace as the "Amazon for RWA" - a global platform that connects issuers, lenders, and investors into a unified ecosystem for real-world assets and reusable credit infrastructure.
+Yusuke has over 10 years of experience leading global growth strategy, including at Amazon, where he contributed to scaling cross-border platform initiatives. He is building Laplace as the "Amazon for RWAs" - a global platform that connects issuers, lenders, and investors into a unified ecosystem for real-world assets and reusable credit infrastructure.
 
 LinkedIn: https://linkedin.com/in/yusuke-hirota-204a01150/
 
