@@ -377,13 +377,6 @@ pnpm dev
 | Blockchain | XRPL Devnet, xrpl.js v4.5 |
 | Math | Decimal.js (arbitrary precision) |
 
----
-
-## License
-
-MIT
-
----
 
 <p align="center">
   <strong>Built for JFIIP Hackathon 2025</strong><br/>
