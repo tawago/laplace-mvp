@@ -27,6 +27,7 @@ import { getTokenSymbol } from '@/lib/xrpl/currency-codes';
 interface MarketConfig {
   id: string;
   name: string;
+  collateralCurrency: string;
   debtCurrency: string;
   debtIssuer: string;
   supplyVaultId: string | null;
@@ -836,7 +837,12 @@ export default function LenderPage() {
           </TabsContent>
 
           <TabsContent value="general-info">
-            <InstitutionalUnderwriting selectedMarketName={selectedMarket?.name} explorerUrl={config?.explorerUrl} />
+            <InstitutionalUnderwriting
+              selectedMarketName={selectedMarket?.name}
+              selectedMarketId={selectedMarket?.id}
+              collateralCurrency={selectedMarket?.collateralCurrency}
+              explorerUrl={config?.explorerUrl}
+            />
           </TabsContent>
         </Tabs>
 

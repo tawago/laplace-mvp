@@ -339,7 +339,6 @@ sequenceDiagram
 > `VaultCreate` was submitted by protocol account [`rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H`](https://devnet.xrpl.org/accounts/rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H) and creates vault `2332F4EF476D9C65EFF401FD4634B46B46ECD79027ACFC3B1F6DE628B90F2601` used by this borrower flow.
 
 
-
 ## Quick Start
 
 ### Prerequisites
@@ -406,7 +405,6 @@ pnpm dev
 - Borrower seeds passed via API for demo convenience (production will use client-side signing)
 - No rate limiting or authentication on API endpoints
 - Escrow preimages stored in DB (production will use HSM/KMS)
-
 
 
 ## Roadmap
