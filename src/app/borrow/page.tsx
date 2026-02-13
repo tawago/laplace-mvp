@@ -128,6 +128,7 @@ export default function LendingPage() {
   const [loanRepayment, setLoanRepayment] = useState<LoanRepaymentOverview | null>(null);
   const [positionLoading, setPositionLoading] = useState(false);
   const [loading, setLoading] = useState('');
+  const [networkPendingCount, setNetworkPendingCount] = useState(0);
   const [collateralTrustlineReady, setCollateralTrustlineReady] = useState(false);
   const [debtTrustlineReady, setDebtTrustlineReady] = useState(false);
 
@@ -144,6 +145,27 @@ export default function LendingPage() {
 
   const sailProperty = getTokenPropertyLink('SAIL');
   const nyraProperty = getTokenPropertyLink('NYRA');
+  const showGlobalLoading = networkPendingCount > 0;
+
+  const beginNetworkRequest = useCallback(() => {
+    setNetworkPendingCount((count) => count + 1);
+  }, []);
+
+  const endNetworkRequest = useCallback(() => {
+    setNetworkPendingCount((count) => Math.max(0, count - 1));
+  }, []);
+
+  const withNetworkLoading = useCallback(
+    async <T,>(fn: () => Promise<T>): Promise<T> => {
+      beginNetworkRequest();
+      try {
+        return await fn();
+      } finally {
+        endNetworkRequest();
+      }
+    },
+    [beginNetworkRequest, endNetworkRequest]
+  );
 
   const getBalance = useCallback(
     (symbol: string, issuer?: string): number => {
@@ -164,7 +186,7 @@ export default function LendingPage() {
   const refreshBalances = useCallback(async () => {
     if (!wallet?.address) return;
     try {
-      const response = await fetch(`/api/balances?address=${wallet.address}`);
+      const response = await withNetworkLoading(() => fetch(`/api/balances?address=${wallet.address}`));
       const payload = await response.json();
       if (payload.success) {
         setBalances(payload.balances);
@@ -172,7 +194,7 @@ export default function LendingPage() {
     } catch (error) {
       console.error('Failed to refresh balances', error);
     }
-  }, [wallet?.address]);
+  }, [wallet?.address, withNetworkLoading]);
 
   const refreshPosition = useCallback(async () => {
     if (!wallet?.address || !selectedMarketId) {
@@ -186,8 +208,8 @@ export default function LendingPage() {
 
     setPositionLoading(true);
     try {
-      const response = await fetch(
-        `/api/lending/position?userAddress=${wallet.address}&marketId=${selectedMarketId}`
+      const response = await withNetworkLoading(() =>
+        fetch(`/api/lending/position?userAddress=${wallet.address}&marketId=${selectedMarketId}`)
       );
       const payload = await response.json();
       if (!payload.success) return;
@@ -200,12 +222,12 @@ export default function LendingPage() {
     } finally {
       setPositionLoading(false);
     }
-  }, [selectedMarketId, wallet?.address]);
+  }, [selectedMarketId, wallet?.address, withNetworkLoading]);
 
   useEffect(() => {
     async function bootstrap() {
       try {
-        const response = await fetch('/api/lending/config');
+        const response = await withNetworkLoading(() => fetch('/api/lending/config'));
         const payload = await response.json();
         if (!payload.success) {
           setConfigError(payload.error?.message ?? 'Failed to load lending config');
@@ -234,7 +256,7 @@ export default function LendingPage() {
     }
 
     bootstrap();
-  }, []);
+  }, [withNetworkLoading]);
 
   useEffect(() => {
     if (!wallet?.address) return;
@@ -306,18 +328,20 @@ export default function LendingPage() {
         return;
       }
 
-      const response = await fetch('/api/lending/deposit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          txHash: sendResult.hash,
-          senderAddress: wallet.address,
-          marketId: selectedMarket.id,
-          escrowCondition: escrowPackage.condition,
-          escrowFulfillment: escrowPackage.fulfillment,
-          escrowPreimage: escrowPackage.preimage,
-        }),
-      });
+      const response = await withNetworkLoading(() =>
+        fetch('/api/lending/deposit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            txHash: sendResult.hash,
+            senderAddress: wallet.address,
+            marketId: selectedMarket.id,
+            escrowCondition: escrowPackage.condition,
+            escrowFulfillment: escrowPackage.fulfillment,
+            escrowPreimage: escrowPackage.preimage,
+          }),
+        })
+      );
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error?.message ?? 'Deposit failed');
@@ -334,6 +358,7 @@ export default function LendingPage() {
     refreshPosition,
     selectedMarket,
     wallet,
+    withNetworkLoading,
     withAction,
   ]);
 
@@ -349,16 +374,18 @@ export default function LendingPage() {
     }
 
     await withAction('borrow', async () => {
-      const response = await fetch('/api/lending/borrow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userAddress: wallet.address,
-          marketId: selectedMarket.id,
-          amount,
-          borrowerSeed: wallet.seed,
-        }),
-      });
+      const response = await withNetworkLoading(() =>
+        fetch('/api/lending/borrow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: wallet.address,
+            marketId: selectedMarket.id,
+            amount,
+            borrowerSeed: wallet.seed,
+          }),
+        })
+      );
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error?.message ?? 'Borrow failed');
@@ -368,7 +395,7 @@ export default function LendingPage() {
       toast.success('Borrow successful');
       await Promise.all([refreshBalances(), refreshPosition()]);
     });
-  }, [borrowAmount, metrics, refreshBalances, refreshPosition, selectedMarket, wallet, withAction]);
+  }, [borrowAmount, metrics, refreshBalances, refreshPosition, selectedMarket, wallet, withAction, withNetworkLoading]);
 
   const handleRepay = useCallback(async () => {
     if (!wallet || !selectedMarket) return;
@@ -380,17 +407,19 @@ export default function LendingPage() {
     if (!Number.isFinite(amount) || amount <= 0) return;
 
     await withAction('repay', async () => {
-      const response = await fetch('/api/lending/repay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userAddress: wallet.address,
-          marketId: selectedMarket.id,
-          amount,
-          borrowerSeed: wallet.seed,
-          repayKind,
-        }),
-      });
+      const response = await withNetworkLoading(() =>
+        fetch('/api/lending/repay', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: wallet.address,
+            marketId: selectedMarket.id,
+            amount,
+            borrowerSeed: wallet.seed,
+            repayKind,
+          }),
+        })
+      );
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error?.message ?? 'Repay failed');
@@ -408,6 +437,7 @@ export default function LendingPage() {
     repayKind,
     selectedMarket,
     wallet,
+    withNetworkLoading,
     withAction,
   ]);
 
@@ -434,15 +464,17 @@ export default function LendingPage() {
     if (!Number.isFinite(amount) || amount <= 0) return;
 
     await withAction('withdraw', async () => {
-      const response = await fetch('/api/lending/withdraw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userAddress: wallet.address,
-          marketId: selectedMarket.id,
-          amount,
-        }),
-      });
+      const response = await withNetworkLoading(() =>
+        fetch('/api/lending/withdraw', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: wallet.address,
+            marketId: selectedMarket.id,
+            amount,
+          }),
+        })
+      );
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error?.message ?? 'Withdraw failed');
@@ -452,7 +484,7 @@ export default function LendingPage() {
       toast.success('Withdrawal successful');
       await Promise.all([refreshBalances(), refreshPosition()]);
     });
-  }, [refreshBalances, refreshPosition, selectedMarket, wallet, withdrawAmount, withAction]);
+  }, [refreshBalances, refreshPosition, selectedMarket, wallet, withdrawAmount, withAction, withNetworkLoading]);
 
   if (configError) {
     return (
@@ -486,7 +518,13 @@ export default function LendingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
+    <div className="relative min-h-screen bg-zinc-50 dark:bg-zinc-900">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0.5 overflow-hidden">
+        <div
+          className={`h-full bg-slate-500 transition-opacity duration-150 ${showGlobalLoading ? 'animate-pulse opacity-100' : 'opacity-0'}`}
+        />
+      </div>
+
       <div className="border-b bg-white dark:bg-zinc-950">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 sm:flex-row sm:items-start sm:justify-between">
           <div>

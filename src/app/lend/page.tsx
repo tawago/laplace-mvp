@@ -112,9 +112,31 @@ export default function LenderPage() {
   const [loadingAction, setLoadingAction] = useState<string>('');
   const [pageLoading, setPageLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [networkPendingCount, setNetworkPendingCount] = useState(0);
 
   const [supplyAmount, setSupplyAmount] = useState('25');
   const [withdrawAmount, setWithdrawAmount] = useState('10');
+  const showGlobalLoading = networkPendingCount > 0;
+
+  const beginNetworkRequest = useCallback(() => {
+    setNetworkPendingCount((count) => count + 1);
+  }, []);
+
+  const endNetworkRequest = useCallback(() => {
+    setNetworkPendingCount((count) => Math.max(0, count - 1));
+  }, []);
+
+  const withNetworkLoading = useCallback(
+    async <T,>(fn: () => Promise<T>): Promise<T> => {
+      beginNetworkRequest();
+      try {
+        return await fn();
+      } finally {
+        endNetworkRequest();
+      }
+    },
+    [beginNetworkRequest, endNetworkRequest]
+  );
 
   const selectedMarket = useMemo(
     () => config?.markets.find((market) => market.id === selectedMarketId) ?? null,
@@ -143,21 +165,21 @@ export default function LenderPage() {
 
   const refreshBalances = useCallback(async () => {
     if (!wallet?.address) return;
-    const response = await fetch(`/api/balances?address=${wallet.address}`);
+    const response = await withNetworkLoading(() => fetch(`/api/balances?address=${wallet.address}`));
     const payload = await response.json();
     if (payload.success) {
       setBalances(payload.balances);
     }
-  }, [wallet?.address]);
+  }, [wallet?.address, withNetworkLoading]);
 
   const refreshPool = useCallback(async () => {
     if (!selectedMarketId) return;
-    const response = await fetch(`/api/lending/markets/${selectedMarketId}`);
+    const response = await withNetworkLoading(() => fetch(`/api/lending/markets/${selectedMarketId}`));
     const payload = await response.json();
     if (payload.success) {
       setPool(payload.data.pool);
     }
-  }, [selectedMarketId]);
+  }, [selectedMarketId, withNetworkLoading]);
 
   const refreshPosition = useCallback(async () => {
     if (!selectedMarketId || !wallet?.address) {
@@ -167,8 +189,8 @@ export default function LenderPage() {
       return;
     }
 
-    const response = await fetch(
-      `/api/lending/markets/${selectedMarketId}/supply-positions/${wallet.address}`
+    const response = await withNetworkLoading(() =>
+      fetch(`/api/lending/markets/${selectedMarketId}/supply-positions/${wallet.address}`)
     );
     const payload = await response.json();
 
@@ -200,7 +222,7 @@ export default function LenderPage() {
         setShareBalance('0');
       }
     }
-  }, [selectedMarket?.supplyMptIssuanceId, selectedMarketId, wallet?.address]);
+  }, [selectedMarket?.supplyMptIssuanceId, selectedMarketId, wallet?.address, withNetworkLoading]);
 
   const refreshEvents = useCallback(async () => {
     if (!wallet?.address || !selectedMarketId) {
@@ -208,14 +230,14 @@ export default function LenderPage() {
       return;
     }
 
-    const response = await fetch(
-      `/api/lending/lenders/${wallet.address}/supply-positions?marketId=${selectedMarketId}`
+    const response = await withNetworkLoading(() =>
+      fetch(`/api/lending/lenders/${wallet.address}/supply-positions?marketId=${selectedMarketId}`)
     );
     const payload = await response.json();
     if (payload.success) {
       setEvents(payload.data.events ?? []);
     }
-  }, [selectedMarketId, wallet?.address]);
+  }, [selectedMarketId, wallet?.address, withNetworkLoading]);
 
   const refreshDashboard = useCallback(async () => {
     await Promise.all([refreshPool(), refreshPosition(), refreshEvents(), refreshBalances()]);
@@ -225,7 +247,7 @@ export default function LenderPage() {
     async function loadConfig() {
       setPageLoading(true);
       try {
-        const response = await fetch('/api/lending/config');
+        const response = await withNetworkLoading(() => fetch('/api/lending/config'));
         const payload = await response.json();
         if (!payload.success) {
           setErrorMessage(payload.error?.message ?? 'Failed to load lending config');
@@ -256,7 +278,7 @@ export default function LenderPage() {
     }
 
     loadConfig();
-  }, []);
+  }, [withNetworkLoading]);
 
   useEffect(() => {
     if (!selectedMarketId) return;
@@ -276,10 +298,12 @@ export default function LenderPage() {
       }
 
       try {
-        const trusted = await checkTrustLine(
-          wallet.address,
-          config.issuerAddress,
-          selectedMarket.debtCurrency
+        const trusted = await withNetworkLoading(() =>
+          checkTrustLine(
+            wallet.address,
+            config.issuerAddress,
+            selectedMarket.debtCurrency
+          )
         );
         setWalletReady(trusted);
       } catch {
@@ -288,7 +312,7 @@ export default function LenderPage() {
     }
 
     checkWalletReadiness();
-  }, [config?.issuerAddress, selectedMarket, wallet]);
+  }, [config?.issuerAddress, selectedMarket, wallet, withNetworkLoading]);
 
   useEffect(() => {
     if (!walletReady || !wallet?.address || !selectedMarketId) return;
@@ -333,14 +357,16 @@ export default function LenderPage() {
         return;
       }
 
-      const response = await fetch(`/api/lending/markets/${selectedMarket.id}/supply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          senderAddress: wallet.address,
-          txHash: sendResult.hash,
-        }),
-      });
+      const response = await withNetworkLoading(() =>
+        fetch(`/api/lending/markets/${selectedMarket.id}/supply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            senderAddress: wallet.address,
+            txHash: sendResult.hash,
+          }),
+        })
+      );
 
       const payload = await response.json();
       if (!payload.success) {
@@ -361,6 +387,7 @@ export default function LenderPage() {
     supplyAmount,
     wallet,
     walletReady,
+    withNetworkLoading,
   ]);
 
   const handleWithdrawSupply = useCallback(async () => {
@@ -397,15 +424,17 @@ export default function LenderPage() {
         return;
       }
 
-      const response = await fetch(`/api/lending/markets/${selectedMarket.id}/withdraw-supply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userAddress: wallet.address,
-          amount: sendResult.submittedAmount,
-          txHash: sendResult.hash,
-        }),
-      });
+      const response = await withNetworkLoading(() =>
+        fetch(`/api/lending/markets/${selectedMarket.id}/withdraw-supply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: wallet.address,
+            amount: sendResult.submittedAmount,
+            txHash: sendResult.hash,
+          }),
+        })
+      );
       const payload = await response.json();
 
       if (!payload.success) {
@@ -420,7 +449,7 @@ export default function LenderPage() {
     } finally {
       setLoadingAction('');
     }
-  }, [refreshDashboard, selectedMarket, wallet, walletReady, withdrawAmount]);
+  }, [refreshDashboard, selectedMarket, wallet, walletReady, withdrawAmount, withNetworkLoading]);
 
   const handleWithdrawAll = useCallback(async () => {
     if (!wallet || !walletReady || !selectedMarket) return;
@@ -448,15 +477,17 @@ export default function LenderPage() {
         return;
       }
 
-      const response = await fetch(`/api/lending/markets/${selectedMarket.id}/withdraw-supply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userAddress: wallet.address,
-          amount: position.supplyAmount,
-          txHash: sendResult.hash,
-        }),
-      });
+      const response = await withNetworkLoading(() =>
+        fetch(`/api/lending/markets/${selectedMarket.id}/withdraw-supply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: wallet.address,
+            amount: position.supplyAmount,
+            txHash: sendResult.hash,
+          }),
+        })
+      );
       const payload = await response.json();
 
       if (!payload.success) {
@@ -471,7 +502,7 @@ export default function LenderPage() {
     } finally {
       setLoadingAction('');
     }
-  }, [position, refreshDashboard, selectedMarket, wallet, walletReady]);
+  }, [position, refreshDashboard, selectedMarket, wallet, walletReady, withNetworkLoading]);
 
   if (pageLoading) {
     return (
@@ -505,7 +536,13 @@ export default function LenderPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="relative min-h-screen bg-slate-50 text-slate-900">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-0.5 overflow-hidden">
+        <div
+          className={`h-full bg-slate-500 transition-opacity duration-150 ${showGlobalLoading ? 'animate-pulse opacity-100' : 'opacity-0'}`}
+        />
+      </div>
+
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
