@@ -30,17 +30,50 @@ Live website: https://laplace-mvp.vercel.app/
 | --- | --- | --- | --- |
 | **Supply** | Supply liquidity to protocol-managed Vaults and earn yield | [/lend](https://laplace-mvp.vercel.app/lend) | [src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts](src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) |
 | **Deposit** | Deposit collateral (RWA tokens) via conditional Escrow | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/deposit/route.ts](src/app/api/lending/deposit/route.ts) |
-| **Borrow** | Borrow debt tokens through native Loan objects | [/borrow](/https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/borrow/route.ts](src/app/api/lending/borrow/route.ts) |
+| **Borrow** | Borrow debt tokens through native Loan objects | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/borrow/route.ts](src/app/api/lending/borrow/route.ts) |
 | **Repay** | Repay loans and withdraw collateral | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/repay/route.ts](src/app/api/lending/repay/route.ts) |
 | **Liquidate** | Liquidate under-collateralized positions | — | [src/app/api/lending/liquidate/route.ts](src/app/api/lending/liquidate/route.ts) |
 
 
-| XRPL Primitive | Transaction Types Used | Purpose in Laplace |
-|----------------|----------------------|-------------------|
-| **Vault** (XLS-65) | [`VaultCreate`](src/lib/xrpl/vault.ts#L170), [`VaultDeposit`](src/lib/xrpl/vault.ts#L195), [`VaultWithdraw`](src/lib/xrpl/vault.ts#L212) | Pool liquidity management; lenders deposit debt tokens, receive LP shares |
-| **Loan** (XLS-66) | [`LoanBrokerSet`](src/lib/xrpl/loan.ts#L275), [`LoanSet`](src/lib/xrpl/loan.ts#L328), [`LoanPay`](src/lib/xrpl/loan.ts#L399), [`LoanDelete`](src/lib/lending/service.ts#L1749) | Native loan objects track principal, interest, maturity on-ledger |
-| **Escrow** | [`EscrowCreate`](src/lib/xrpl/escrow.ts#L123), [`EscrowFinish`](src/lib/xrpl/escrow.ts#L262), [`EscrowCancel`](src/lib/xrpl/escrow.ts#L300) | Conditional collateral locking with SHA-256 preimage conditions |
-| **TrustLine** | [`TrustSet`](src/lib/client/xrpl.ts#L171), [`Payment`](src/lib/xrpl/tokens.ts#L88) | Token issuance and transfer for collateral/debt assets |
+### Vault (XLS-65)
+
+Purpose: Pool liquidity management; lenders deposit debt tokens, receive LP shares
+
+| Transaction Type | Code Link |
+| --- | --- |
+| `VaultCreate` | [src/lib/xrpl/vault.ts#L170](src/lib/xrpl/vault.ts#L170) |
+| `VaultDeposit` | [src/lib/xrpl/vault.ts#L195](src/lib/xrpl/vault.ts#L195) |
+| `VaultWithdraw` | [src/lib/xrpl/vault.ts#L212](src/lib/xrpl/vault.ts#L212) |
+
+### Loan (XLS-66)
+
+Purpose: Native loan objects track principal, interest, maturity on-ledger
+
+| Transaction Type | Code Link |
+| --- | --- |
+| `LoanBrokerSet` | [src/lib/xrpl/loan.ts#L275](src/lib/xrpl/loan.ts#L275) |
+| `LoanSet` | [src/lib/xrpl/loan.ts#L328](src/lib/xrpl/loan.ts#L328) |
+| `LoanPay` | [src/lib/xrpl/loan.ts#L399](src/lib/xrpl/loan.ts#L399) |
+| `LoanDelete` | [src/lib/lending/service.ts#L1749](src/lib/lending/service.ts#L1749) |
+
+### Escrow
+
+Purpose: Conditional collateral locking with SHA-256 preimage conditions
+
+| Transaction Type | Code Link |
+| --- | --- |
+| `EscrowCreate` | [src/lib/xrpl/escrow.ts#L123](src/lib/xrpl/escrow.ts#L123) |
+| `EscrowFinish` | [src/lib/xrpl/escrow.ts#L262](src/lib/xrpl/escrow.ts#L262) |
+| `EscrowCancel` | [src/lib/xrpl/escrow.ts#L300](src/lib/xrpl/escrow.ts#L300) |
+
+### TrustLine
+
+Purpose: Token issuance and transfer for collateral/debt assets
+
+| Transaction Type | Code Link |
+| --- | --- |
+| `TrustSet` | [src/lib/client/xrpl.ts#L171](src/lib/client/xrpl.ts#L171) |
+| `Payment` | [src/lib/xrpl/tokens.ts#L88](src/lib/xrpl/tokens.ts#L88) |
 
 
 ## Architecture at a Glance
