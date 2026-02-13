@@ -4,8 +4,8 @@
  * Handles lending position CRUD operations with interest accrual using Drizzle ORM.
  */
 
-import { eq, and } from 'drizzle-orm';
-import { db, users, positions, Position as DbPosition } from '../db';
+import { eq, and, asc, desc, inArray, isNotNull } from 'drizzle-orm';
+import { db, users, positions, markets, onchainTransactions, Position as DbPosition } from '../db';
 import { getOrCreateUser } from '../db/seed';
 import { PositionStatus, Position, PositionMetrics, Market } from './types';
 import {
@@ -91,6 +91,13 @@ export interface PositionLoanMetadata {
   loanTermMonths: number;
   loanMaturityDate: Date | null;
   loanOpenedAtLedgerIndex: number | null;
+}
+
+export interface ActiveEscrowPosition {
+  escrowOwner: string;
+  collateralAmount: number;
+  collateralCurrency: string;
+  txHash: string | null;
 }
 
 /**
@@ -445,6 +452,81 @@ export async function clearPositionLoanMetadata(positionId: string): Promise<voi
       lastInterestUpdate: new Date(),
     })
     .where(eq(positions.id, positionId));
+}
+
+export async function getActiveEscrowPositions(
+  marketId?: string,
+  limit: number = 20
+): Promise<ActiveEscrowPosition[]> {
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+  const filters = [eq(positions.status, 'ACTIVE'), isNotNull(positions.escrowOwner)];
+
+  if (marketId) {
+    filters.push(eq(positions.marketId, marketId));
+  }
+
+  const escrowPositions = await db.query.positions.findMany({
+    where: and(...filters),
+    columns: {
+      escrowOwner: true,
+      collateralAmount: true,
+      marketId: true,
+    },
+    orderBy: [desc(positions.openedAt), asc(positions.id)],
+    limit: safeLimit,
+  });
+
+  if (escrowPositions.length === 0) {
+    return [];
+  }
+
+  const marketIds = [...new Set(escrowPositions.map((row) => row.marketId))];
+  const ownerAddresses = [...new Set(escrowPositions.map((row) => row.escrowOwner).filter((owner): owner is string => Boolean(owner)))];
+
+  const [marketRows, escrowTxRows] = await Promise.all([
+    db.query.markets.findMany({
+      where: inArray(markets.id, marketIds),
+      columns: {
+        id: true,
+        collateralCurrency: true,
+      },
+    }),
+    db.query.onchainTransactions.findMany({
+      where: and(eq(onchainTransactions.txType, 'EscrowCreate'), inArray(onchainTransactions.sourceAddress, ownerAddresses)),
+      columns: {
+        txHash: true,
+        sourceAddress: true,
+      },
+      orderBy: [desc(onchainTransactions.observedAt), desc(onchainTransactions.ledgerIndex)],
+      limit: 500,
+    }),
+  ]);
+
+  const collateralCurrencyByMarketId = new Map(marketRows.map((row) => [row.id, row.collateralCurrency]));
+  const latestTxHashByOwner = new Map<string, string>();
+
+  for (const row of escrowTxRows) {
+    if (!row.sourceAddress || latestTxHashByOwner.has(row.sourceAddress)) {
+      continue;
+    }
+
+    latestTxHashByOwner.set(row.sourceAddress, row.txHash);
+  }
+
+  return escrowPositions.flatMap((row) => {
+    if (!row.escrowOwner) {
+      return [];
+    }
+
+    return [
+      {
+        escrowOwner: row.escrowOwner,
+        collateralAmount: parseFloat(row.collateralAmount),
+        collateralCurrency: collateralCurrencyByMarketId.get(row.marketId) ?? 'UNKNOWN',
+        txHash: latestTxHashByOwner.get(row.escrowOwner) ?? null,
+      },
+    ];
+  });
 }
 
 /**

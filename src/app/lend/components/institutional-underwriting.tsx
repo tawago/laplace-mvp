@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Shield } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -129,10 +129,36 @@ const INSTITUTIONAL_MOCK_DATA: Record<string, InstitutionalMockData> = {
 
 interface InstitutionalUnderwritingProps {
   selectedMarketName?: string;
+  selectedMarketId?: string;
+  collateralCurrency?: string;
   explorerUrl?: string;
 }
 
-export function InstitutionalUnderwriting({ selectedMarketName, explorerUrl }: InstitutionalUnderwritingProps) {
+interface EscrowRow {
+  escrowOwner: string;
+  collateralAmount: number;
+  collateralCurrency: string;
+  txHash: string | null;
+}
+
+function truncateMiddle(value: string, left = 8, right = 6): string {
+  if (value.length <= left + right + 3) {
+    return value;
+  }
+
+  return `${value.slice(0, left)}...${value.slice(-right)}`;
+}
+
+export function InstitutionalUnderwriting({
+  selectedMarketName,
+  selectedMarketId,
+  collateralCurrency,
+  explorerUrl,
+}: InstitutionalUnderwritingProps) {
+  const [escrows, setEscrows] = useState<EscrowRow[]>([]);
+  const [escrowsLoading, setEscrowsLoading] = useState(false);
+  const [escrowsError, setEscrowsError] = useState('');
+
   const currentMockData = useMemo(() => {
     if (!selectedMarketName) return INSTITUTIONAL_MOCK_DATA.SAIL;
     const marketKey = selectedMarketName.split('-')[0] as keyof typeof INSTITUTIONAL_MOCK_DATA;
@@ -170,8 +196,61 @@ export function InstitutionalUnderwriting({ selectedMarketName, explorerUrl }: I
 
   const underwritingLtvPercent = Math.max(0, Math.min(100, underwritingDerived.currentLtv * 100));
   const underwritingMaxLtvPercent = Math.max(0, Math.min(100, currentMockData.valuation.maxLtv * 100));
-  const txHashLabel = `${currentMockData.onChain.txHash.slice(0, 12)}...${currentMockData.onChain.txHash.slice(-10)}`;
-  const explorerBaseUrl = explorerUrl ?? 'https://livenet.xrpl.org';
+  const explorerBaseUrl = explorerUrl?.trim() || null;
+  const collateralAmountFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+      }),
+    []
+  );
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    async function loadEscrows() {
+      setEscrowsLoading(true);
+      setEscrowsError('');
+
+      try {
+        const params = new URLSearchParams();
+        if (selectedMarketId) {
+          params.set('marketId', selectedMarketId);
+        }
+
+        const query = params.toString();
+        const response = await fetch(query ? `/api/lending/escrows?${query}` : '/api/lending/escrows', {
+          signal: abortController.signal,
+        });
+        const payload = await response.json();
+
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.error?.message ?? 'Failed to load active escrows');
+        }
+
+        const rows = Array.isArray(payload.data?.escrows) ? payload.data.escrows : [];
+        setEscrows(rows.slice(0, 10));
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        setEscrows([]);
+        setEscrowsError(error instanceof Error ? error.message : 'Failed to load active escrows');
+      } finally {
+        if (!abortController.signal.aborted) {
+          setEscrowsLoading(false);
+        }
+      }
+    }
+
+    loadEscrows();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [selectedMarketId]);
 
   return (
     <section className="space-y-4">
@@ -290,7 +369,7 @@ export function InstitutionalUnderwriting({ selectedMarketName, explorerUrl }: I
           <Badge className="bg-emerald-600 text-white">On-chain Verified</Badge>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-white/70 p-3">
               <p className="text-xs text-slate-500">Collateral State</p>
               <Badge className={`mt-2 ${onChainBadgeClassName}`}>{currentMockData.onChain.collateralState}</Badge>
@@ -300,27 +379,68 @@ export function InstitutionalUnderwriting({ selectedMarketName, explorerUrl }: I
               <p className="mt-1 text-sm font-semibold text-slate-900">{new Date(currentMockData.onChain.lastVerified).toLocaleString()}</p>
             </div>
             <div className="rounded-xl bg-white/70 p-3">
-              <p className="text-xs text-slate-500">Escrow Active</p>
-              <Badge className={`mt-2 ${currentMockData.onChain.escrowActive ? 'bg-emerald-600 text-white' : 'bg-rose-500 text-white'}`}>
-                {currentMockData.onChain.escrowActive ? 'Yes' : 'No'}
-              </Badge>
-            </div>
-            <div className="rounded-xl bg-white/70 p-3">
               <p className="text-xs text-slate-500">Multi-Sig Requirement</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">{currentMockData.onChain.multiSigRequirement}</p>
             </div>
-            <div className="rounded-xl bg-white/70 p-3">
-              <p className="text-xs text-slate-500">XRPL Tx Hash</p>
-              <a
-                href={`${explorerBaseUrl}/transactions/${currentMockData.onChain.txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-blue-700 hover:underline"
-              >
-                {txHashLabel}
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-emerald-100 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Active Escrows</p>
+
+            {escrowsLoading ? (
+              <div className="mt-3 space-y-2">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="h-9 animate-pulse rounded-md bg-slate-100" />
+                ))}
+              </div>
+            ) : escrowsError ? (
+              <p className="mt-3 text-sm text-rose-700">Could not load escrows: {escrowsError}</p>
+            ) : escrows.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">No active escrows.</p>
+            ) : (
+              <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-slate-200">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Wallet</th>
+                      <th className="px-3 py-2 font-medium">Collateral</th>
+                      <th className="px-3 py-2 font-medium">EscrowCreate Tx</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {escrows.map((escrow, index) => {
+                      const tokenSymbol = escrow.collateralCurrency || collateralCurrency || 'N/A';
+
+                      return (
+                        <tr key={`${escrow.escrowOwner}-${index}`} className="border-t border-slate-100 bg-white">
+                          <td className="px-3 py-2 font-mono text-xs text-slate-700">{truncateMiddle(escrow.escrowOwner, 10, 8)}</td>
+                          <td className="px-3 py-2 text-slate-800">
+                            {collateralAmountFormatter.format(escrow.collateralAmount)} {tokenSymbol}
+                          </td>
+                          <td className="px-3 py-2">
+                            {escrow.txHash && explorerBaseUrl ? (
+                              <a
+                                href={`${explorerBaseUrl}/transactions/${escrow.txHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-blue-700 hover:underline"
+                              >
+                                {truncateMiddle(escrow.txHash, 10, 8)}
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            ) : escrow.txHash ? (
+                              <span className="font-mono text-xs text-slate-600">{truncateMiddle(escrow.txHash, 10, 8)}</span>
+                            ) : (
+                              <span className="text-slate-500">Not available</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
