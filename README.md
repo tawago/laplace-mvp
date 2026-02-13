@@ -1,4 +1,4 @@
-# Laplace – On-Chain Credit Infrastructure for Global Real Estate
+# Laplace: On-Chain Credit Infrastructure for Global Real Estate
 
 ## 1. Project Overview
 
