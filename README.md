@@ -22,7 +22,7 @@ Live website: https://laplace-mvp.vercel.app/
 1. Navigate to `/admin` -> Generate a local wallet, get all three faucet tokens
 2. Navigate to `/lend` → Supply debt tokens (RLUSD) to the vault
 3. Navigate to `/borrow` → Deposit collateral tokens(SAIL or NYRA), borrow RLUSD
-4. Repay loan using regualar type. To close Loan completely, Repay with "full" afterwards
+4. Repay loan using regular type. To close Loan completely, Repay with "full" afterwards
 5. Withdraw collateral with the exact amount you've deposited
 4. Check `onchain_transactions` table for tx hashes
 
