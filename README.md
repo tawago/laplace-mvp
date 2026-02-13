@@ -4,11 +4,11 @@
 
 Laplace is a luxury RWA marketplace and lending protocol that leverages native XRPL transaction types introduced in recent devnet amendments (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience. Users can:
 
-1. **Supply** liquidity to protocol-managed Vaults and earn yield
-2. **Deposit** collateral (RWA tokens) via conditional Escrow
-3. **Borrow** debt tokens through native Loan objects
-4. **Repay** loans and **withdraw** collateral
-5. **Liquidate** under-collateralized positions
+1. [**Supply**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) liquidity to protocol-managed Vaults and earn yield
+2. [**Deposit**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/deposit/route.ts) collateral (RWA tokens) via conditional Escrow
+3. [**Borrow**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/borrow/route.ts) debt tokens through native Loan objects
+4. [**Repay**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/repay/route.ts) loans and **withdraw** collateral
+5. [**Liquidate**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/liquidate/route.ts) under-collateralized positions
 
 **What is verifiabley on-chain:**
 - Vault creation and deposit/withdraw operations
@@ -32,10 +32,10 @@ Live website: https://laplace-mvp.vercel.app/
 
 | XRPL Primitive | Transaction Types Used | Purpose in Laplace |
 |----------------|----------------------|-------------------|
-| **Vault** (XLS-65) | `VaultCreate`, `VaultDeposit`, `VaultWithdraw` | Pool liquidity management; lenders deposit debt tokens, receive LP shares |
-| **Loan** (XLS-66) | `LoanBrokerSet`, `LoanSet`, `LoanPay`, `LoanDelete` | Native loan objects track principal, interest, maturity on-ledger |
-| **Escrow** | `EscrowCreate`, `EscrowFinish`, `EscrowCancel` | Conditional collateral locking with SHA-256 preimage conditions |
-| **TrustLine** | `TrustSet`, `Payment` | Token issuance and transfer for collateral/debt assets |
+| **Vault** (XLS-65) | [`VaultCreate`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L170), [`VaultDeposit`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L195), [`VaultWithdraw`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/vault.ts#L212) | Pool liquidity management; lenders deposit debt tokens, receive LP shares |
+| **Loan** (XLS-66) | [`LoanBrokerSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L275), [`LoanSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L328), [`LoanPay`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/loan.ts#L399), [`LoanDelete`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/lending/service.ts#L1749) | Native loan objects track principal, interest, maturity on-ledger |
+| **Escrow** | [`EscrowCreate`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L123), [`EscrowFinish`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L262), [`EscrowCancel`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/escrow.ts#L300) | Conditional collateral locking with SHA-256 preimage conditions |
+| **TrustLine** | [`TrustSet`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/client/xrpl.ts#L171), [`Payment`](https://github.com/tawago/laplace-mvp/blob/main/src/lib/xrpl/tokens.ts#L88) | Token issuance and transfer for collateral/debt assets |
 
 ---
 
