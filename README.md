@@ -1,8 +1,6 @@
-# Laplace: Luxury RWA Marketplace with Native XRPL Lending Protocol
+# Laplace: A Luxury RWA Marketplace with Native XRPL Lending
 
----
-
-Laplace is a luxury RWA marketplace and lending protocol that leverages native XRPL transaction types introduced in recent devnet amendments (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience. Users can:
+Laplace is a tokenized luxury real estate marketplace and lending protocol that leverages native XRPL transaction types (XLS-65 Vaults, XLS-66 Loans) to create a fully on-chain lending experience supported by RWA tokens. Users can:
 
 1. [**Supply**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) liquidity to protocol-managed Vaults and earn yield
 2. [**Deposit**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/deposit/route.ts) collateral (RWA tokens) via conditional Escrow
@@ -10,13 +8,7 @@ Laplace is a luxury RWA marketplace and lending protocol that leverages native X
 4. [**Repay**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/repay/route.ts) loans and **withdraw** collateral
 5. [**Liquidate**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/liquidate/route.ts) under-collateralized positions
 
-**What is verifiabley on-chain:**
-- Vault creation and deposit/withdraw operations
-- Loan origination, payments, and state changes
-- Escrow-based collateral locking with cryptographic conditions
-- All transactions persisted
-
-### Test Flow on Devnet
+## Application Walkthrough
 Live website: https://laplace-mvp.vercel.app/
 
 1. Navigate to `/admin` -> Generate a local wallet, get all three faucet tokens
@@ -26,9 +18,13 @@ Live website: https://laplace-mvp.vercel.app/
 5. Withdraw collateral with the exact amount you've deposited
 4. Check `onchain_transactions` table for tx hashes
 
----
+## What is verifiable on-chain
+- Vault creation and deposit/withdraw operations
+- Loan origination, payments, and state changes
+- Escrow-based collateral locking with cryptographic conditions
+- All transactions persisted
 
-## XRPL and Core Functions
+## Core Functions and XRPL Features
 
 | XRPL Primitive | Transaction Types Used | Purpose in Laplace |
 |----------------|----------------------|-------------------|
