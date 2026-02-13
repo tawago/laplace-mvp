@@ -38,6 +38,7 @@ This enables:
 - Reusable collateral instead of forced asset sales
 
 Rather than competing with traditional mortgage markets, Laplace defines a new category: protocol-based credit infrastructure for RWA. As tokenized real estate scales globally, reusable collateral becomes the next structural on-chain layer of capital efficiency. 
+
 Users can:
 
 1. [**Supply**](https://github.com/tawago/laplace-mvp/blob/main/src/app/api/lending/markets/%5BmarketId%5D/supply/route.ts) liquidity to protocol-managed Vaults and earn yield
