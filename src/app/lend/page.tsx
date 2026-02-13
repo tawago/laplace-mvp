@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Copy, ExternalLink, Loader2, TrendingUp, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { InstitutionalUnderwriting } from './components/institutional-underwriting';
+
 import {
   checkTrustLine,
   getVaultShareBalance,
@@ -771,6 +773,8 @@ export default function LenderPage() {
             )}
           </CardContent>
         </Card>
+
+        <InstitutionalUnderwriting selectedMarketName={selectedMarket?.name} explorerUrl={config?.explorerUrl} />
 
         {config?.explorerUrl && wallet?.address && (
           <div className="pb-6 text-center">
