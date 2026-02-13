@@ -1,6 +1,44 @@
-# Laplace: A Luxury RWA Marketplace with Native XRPL Lending
+# Laplace – On-Chain Credit Infrastructure for Global Real Estate
 
-Laplace is a tokenized luxury real estate marketplace and lending protocol that leverages native XRPL transaction types ([XLS-65 Vaults](https://opensource.ripple.com/docs/xls-65-single-asset-vault), [XLS-66 Loans](https://opensource.ripple.com/docs/xls-66-lending-protocol)) to create a fully on-chain lending experience supported by RWA tokens. Users can:
+## 1. Project Overview
+
+Laplace offers a protocol-based credit layer for global real estate RWA by enabling tokenized property to function as reusable collateral and executing credit lines directly on the XRP Ledger.
+
+![Laplace On-Chain Credit for Global Real Estate](app-screenshot.png)
+
+This MVP runs entirely on XRPL Devnet and leverages native XRPL transaction types ([XLS-65 Vaults](https://opensource.ripple.com/docs/xls-65-single-asset-vault), [XLS-66 Loans](https://opensource.ripple.com/docs/xls-66-lending-protocol)) to create a fully on-chain lending experience supported by RWA tokens including:
+- Single Asset Vault (SAV)
+- Loan object
+- Escrow-based collateral locking
+- Multi-signature enforcement
+- On-chain collateral state transitions
+
+
+## 2. Problem
+
+Real estate is the largest asset class in the world - over $350 trillion - yet once tokenized, it remains financially static. Ownership has been digitized. Collateral has not.
+
+Tokenized real estate today cannot reliably function as reusable collateral across jurisdictions due to:
+- No unified collateral registry
+- Fragmented SPV governance
+- Double-pledge uncertainty
+- Inconsistent cross-border enforceability
+
+As a result, liquidity requires asset sale rather than collateral reuse. The structural bottleneck in RWA markets is not token issuance - it is credit infrastructure.
+
+## 3. Solution
+
+Laplace offers the missing credit layer for global real estate RWAs. We standardize SPV governance off-chain and anchor loan issuance and collateral state transitions directly on XRPL.
+
+This enables:
+- Deterministic on-chain collateral locking
+- Verifiable loan lifecycle management
+- Publicly auditable credit state transitions
+- Reusable collateral instead of forced asset sales
+
+Rather than competing with traditional mortgage markets, Laplace defines a new category: protocol-based credit infrastructure for RWA. As tokenized real estate scales globally, reusable collateral becomes the next structural on-chain layer of capital efficiency. 
+
+Users can:
 
 1. **Supply** liquidity to protocol-managed Vaults and earn yield
 2. **Deposit** collateral (RWA tokens) via conditional Escrow
@@ -8,9 +46,7 @@ Laplace is a tokenized luxury real estate marketplace and lending protocol that 
 4. **Repay** loans and **withdraw** collateral
 5. **Liquidate** under-collateralized positions
 
-![Laplace On-Chain Credit for RWAs](app-screenshot.png)
-
-## Application Walkthrough
+## 4. Application Walkthrough
 Live website: https://laplace-mvp.vercel.app/
 
 1. Generate a local wallet and get faucet tokens
@@ -41,13 +77,15 @@ Live website: https://laplace-mvp.vercel.app/
 7. See the on-chain transaction history
     - Click "View wallet on Explorer" at the bottom of the page
 
-## What is verifiable on-chain
+### What is verifiable on-chain
 - Vault creation and deposit/withdraw operations
 - Loan origination, payments, and state changes
 - Escrow-based collateral locking with cryptographic conditions
 - All transactions persisted
 
-## Core Functions and XRPL Features
+## 5. Technology and XRPL Features
+
+### Core Functions
 
 | Function | Description | App Link | Code Link |
 | --- | --- | --- | --- |
@@ -56,7 +94,6 @@ Live website: https://laplace-mvp.vercel.app/
 | **Borrow** | Borrow debt tokens through native Loan objects | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/borrow/route.ts](src/app/api/lending/borrow/route.ts) |
 | **Repay** | Repay loans and withdraw collateral | [/borrow](https://laplace-mvp.vercel.app/borrow) | [src/app/api/lending/repay/route.ts](src/app/api/lending/repay/route.ts) |
 | **Liquidate** | Liquidate under-collateralized positions | — | [src/app/api/lending/liquidate/route.ts](src/app/api/lending/liquidate/route.ts) |
-
 
 ### Vault (XLS-65)
 
@@ -99,7 +136,7 @@ Purpose: Token issuance and transfer for collateral/debt assets
 | `Payment` | [src/lib/xrpl/tokens.ts#L88](src/lib/xrpl/tokens.ts#L88) |
 
 
-## Architecture at a Glance
+## 5. Architecture at a Glance
 
 ```mermaid
 flowchart LR
@@ -158,7 +195,8 @@ flowchart LR
 - **Yield model:** suppliers provide capital and earn yield from borrower repayments.
 - **XRPL-backed rails:** issuance/transfers, escrow locks, loan state, and vault accounting settle on XRPL primitives.
 
-## Repository Structure
+
+## 6. Repository Structure
 
 ```
 src/
@@ -200,7 +238,7 @@ scripts/
 └── init-db.ts                       # Schema + seed data
 ```
 
-## DB ↔ Ledger Relationship
+## 7. DB ↔ Ledger Relationship
 
 ```mermaid
 erDiagram
@@ -249,7 +287,8 @@ erDiagram
 - `markets.supply_vault_id` → XRPL Vault ledger entry
 - Every state-changing operation creates an `onchain_transactions` row with the tx hash
 
-## Lending Lifecycle (On-Chain)
+
+## 8. Lending Lifecycle (On-Chain)
 
 ```mermaid
 sequenceDiagram
@@ -291,7 +330,7 @@ sequenceDiagram
 ```
 
 
-## API Surface
+## 9. API Surface
 
 ### Lending Operations
 
@@ -323,7 +362,7 @@ sequenceDiagram
 | `/api/lending/config` | GET | Protocol configuration |
 
 
-## Live Transaction Evidence
+## 10. Live Transaction Evidence
 
 > Borrower & Lender Account: [`r3KFqgrvzkyFZ916TKSyz4N9qdmnRwhTxS`](https://devnet.xrpl.org/accounts/r3KFqgrvzkyFZ916TKSyz4N9qdmnRwhTxS)
 
@@ -341,7 +380,7 @@ sequenceDiagram
 > `VaultCreate` was submitted by protocol account [`rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H`](https://devnet.xrpl.org/accounts/rs84UfRZ7CZvyNQfUN5CsYvptporja1C6H) and creates vault `2332F4EF476D9C65EFF401FD4634B46B46ECD79027ACFC3B1F6DE628B90F2601` used by this borrower flow.
 
 
-## Quick Start
+## 11. Quick Start
 
 ### Prerequisites
 
@@ -386,7 +425,7 @@ pnpm dev
 
 
 
-## Limitations
+## 12. Limitations
 
 ### XRPL Devnet-Only Amendments
 
@@ -409,25 +448,45 @@ pnpm dev
 - Escrow preimages stored in DB (production will use HSM/KMS)
 
 
-## Roadmap
+## 13. Roadmap
 
-### Mainnet
+### Tech
 
+#### Mainnet
 1. **Wait for amendments**: XLS-65 and XLS-66 must be enabled on mainnet
 2. **Client-side signing**: Remove seed transmission, use wallet adapters (Xumm, Crossmark)
 3. **Oracle integration**: Connect to price feeds (Pyth, Chainlink via bridge)
 4. **Audit**: Third party security review of service logic
 
-### Feature Expansion
+#### Feature Expansion
 
 - Multi-market support with different collateral/debt pairs
 - Variable interest rate curves based on utilization
 - Governance token for protocol parameters
 - Cross-chain collateral (IBC/Axelar bridge integration)
 
+### Business
+
+#### Phase 1 - Validate Model
+
+- Issue Laplace-originated RWA
+- Prove reusable collateral execution
+- Onboard initial lenders
+
+#### Phase 2 - Third-Party RWA Integration
+
+- Certify and onboard external real estate RWA
+- Apply standardized collateral governance
+- Expand multi-lender participation
+
+#### Phase 3 - Shared Credit Infrastructure
+
+- Establish XRPL-based global collateral registry
+- Enable cross-issuer reusable collateral
+- Build network effects across issuers and lenders
 
 
-## Tech Stack
+## 14. Tech Stack
 
 | Layer | Technology |
 |-------|------------|
@@ -436,3 +495,83 @@ pnpm dev
 | Database | Neon Postgres, Drizzle ORM |
 | Blockchain | XRPL Devnet, xrpl.js v4.5 |
 | Math | Decimal.js (arbitrary precision) |
+
+
+## 15. Market Opportunity
+
+Real estate is a $350+ trillion global asset class - the largest in the world.
+
+Tokenized real-world assets are projected to reach multi-trillion-dollar scale by 2030, with real estate expected to be a dominant category as institutional adoption accelerates.
+
+However, tokenization today enables ownership, not capital efficiency.
+
+Most tokenized real estate remains static equity. Liquidity requires asset sale rather than collateral reuse. This creates a structural gap: RWA lacks a credit layer.
+
+Japan represents a uniquely attractive entry market:
+- Household financial assets exceed ¥2,200 trillion (~$14-15 trillion).
+- Nearly 50% of these assets are held in cash and deposits, reflecting underutilized capital.
+- Japanese investors actively participate in global real estate markets.
+- Japan has a structured regulatory framework for security tokens and digital securities.
+
+This combination - large capital base, high cash allocation, and regulatory clarity - creates strong conditions for reusable collateral infrastructure.
+
+As RWA markets scale globally, the bottleneck shifts from token issuance to credit enablement.
+
+Laplace targets this structural shift by building the on-chain credit layer for global real estate on XRPL.
+
+
+## 16. Business Model
+
+Laplace operates as protocol-based credit infrastructure rather than a balance-sheet lender. The company captures value at the infrastructure layer, scaling with the number of onboarded assets, participating lenders, and total reusable collateral volume. The model is asset-light, capital-efficient, and designed to benefit from network effects as tokenized real estate adoption expands globally.
+
+### Revenue Model
+
+- Credit execution fees (per loan created and collateral state transition)
+- RWA onboarding & certification fees (for third-party issuers integrating into the credit framework)
+- Institutional API & registry access fees (for lenders accessing verified collateral and credit state data)
+
+This structure enables recurring, infrastructure-level revenue without deploying proprietary lending capital.
+
+
+
+## 17. Compliance Framework
+
+Laplace is structured to align with existing regulatory frameworks through clear role separation and jurisdictional design.
+
+### Japan
+
+- RWA issued by Laplace are distributed to retail investors through a licensed Type II Financial Instruments Business (FIBO) partner.
+- Tokenized interests are treated as deemed securities under Japanese law.
+- All regulated investor solicitation, disclosure, and distribution activities are conducted by the licensed entity.
+
+Laplace focuses on asset structuring and protocol-level collateral state management, while regulated sales functions are handled by licensed partners.
+
+### UAE
+
+- Custody and liquidation are structured under a VARA-aligned framework.
+- Enforcement actions follow predefined, non-discretionary contractual rules executed by licensed entities.
+
+### Laplace's Role
+
+Laplace:
+- Issues and structures real estate RWA
+- Standardizes SPV governance off-chain
+- Anchors collateral and loan state on XRPL
+- Does not directly conduct licensed distribution activities in regulated jurisdictions
+
+Regulatory responsibilities are clearly allocated to appropriate licensed entities, ensuring compliance while maintaining protocol-based credit infrastructure on-chain.
+
+
+## 18. Team
+
+### Yusuke Hirota - CEO
+
+Yusuke has over 10 years of experience leading global growth strategy, including at Amazon, where he contributed to scaling cross-border platform initiatives. He is building Laplace as the "Amazon for RWA" - a global platform that connects issuers, lenders, and investors into a unified ecosystem for real-world assets and reusable credit infrastructure.
+
+LinkedIn: https://linkedin.com/in/yusuke-hirota-204a01150/
+
+### Jonathan Froeming - CTO
+
+Jonathan brings over 20 years of engineering leadership experience, including roles within Amazon's financial division and Bitbank. He leads the architecture of Laplace's XRPL-native infrastructure, designing a scalable and secure foundation for a global real-world asset platform.
+
+LinkedIn: https://linkedin.com/in/johna1203/
