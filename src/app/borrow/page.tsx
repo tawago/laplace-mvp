@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { TokenHolderBenefits } from './components/token-holder-benefits';
+
 import {
   generateConditionFulfillment,
   getWalletFromSeed,
@@ -872,6 +874,13 @@ export default function LendingPage() {
                 )}
               </CardContent>
             </Card>
+
+            <TokenHolderBenefits
+              selectedMarketName={selectedMarket.name}
+              explorerUrl={config?.explorerUrl}
+              walletBalance={getBalance(selectedMarket.collateralCurrency, config?.issuerAddress)}
+              collateralDeposited={position?.collateralAmount ?? 0}
+            />
           </div>
         )}
 
