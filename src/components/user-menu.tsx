@@ -28,14 +28,15 @@ import {
   Shield,
   ChevronDown,
   Briefcase,
-  CalendarDays,
   X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
+import { useWallet } from '@/contexts/wallet-context';
 import { toast } from 'sonner';
 
 export function UserMenu() {
   const { user, logout } = useAuth();
+  const { address, connectionType, disconnect, isRefreshing, refreshBalances, rlusdBalance } = useWallet();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -49,10 +50,20 @@ export function UserMenu() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen || !address) return;
+    void refreshBalances();
+  }, [address, isOpen, refreshBalances]);
+
   if (!user) return null;
 
   const copyAddress = () => {
-    navigator.clipboard.writeText(user.wallet.address);
+    if (!address) {
+      toast.error('No wallet connected');
+      return;
+    }
+
+    navigator.clipboard.writeText(address);
     toast.success('Wallet address copied!');
   };
 
@@ -60,7 +71,12 @@ export function UserMenu() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await disconnect();
+    } catch {
+      // Keep logout flow resilient even if wallet provider fails.
+    }
     logout();
     toast.success('Logged out successfully');
     setIsOpen(false);
@@ -72,12 +88,6 @@ export function UserMenu() {
       icon: Briefcase,
       label: 'My Portfolio',
       description: 'View your token investments'
-    },
-    {
-      href: '/bookings',
-      icon: CalendarDays,
-      label: 'My Bookings',
-      description: 'Manage your reservations'
     },
     {
       href: '/wallet',
@@ -147,7 +157,7 @@ export function UserMenu() {
                 {/* Smart Account Badge */}
                 <Badge variant="secondary" className="w-fit">
                   <Shield className="mr-1 h-3 w-3" />
-                  Smart Account
+                  {connectionType === 'disconnected' ? 'Wallet Disconnected' : `Wallet: ${connectionType.toUpperCase()}`}
                 </Badge>
               </SheetHeader>
 
@@ -163,16 +173,16 @@ export function UserMenu() {
                       <Copy className="h-4 w-4" />
                     </button>
                   </div>
-                  <p className="font-mono text-sm">{formatAddress(user.wallet.address)}</p>
+                  <p className="font-mono text-sm">{address ? formatAddress(address) : 'Not connected'}</p>
                   
                   <div className="mt-4 flex items-center justify-between">
-                    <span className="text-sm text-zinc-600 dark:text-zinc-400">Balance</span>
-                    <span className="flex items-center gap-1 font-semibold">
-                      <DollarSign className="h-4 w-4" />
-                      {user.wallet.balance.toLocaleString()} USDC
-                    </span>
+                    <span className="text-sm text-zinc-600 dark:text-zinc-400">RLUSD Balance</span>
+                      <span className="flex items-center gap-1 font-semibold">
+                        <DollarSign className="h-4 w-4" />
+                        {isRefreshing ? 'Refreshing...' : `${rlusdBalance.toLocaleString()} RLUSD`}
+                      </span>
+                    </div>
                   </div>
-                </div>
               </div>
 
               {/* Navigation Menu */}
@@ -200,7 +210,7 @@ export function UserMenu() {
                 <Button
                   variant="outline"
                   className="w-full justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/20"
-                  onClick={handleLogout}
+                  onClick={() => void handleLogout()}
                 >
                   <LogOut className="h-4 w-4" />
                   Logout
@@ -226,7 +236,7 @@ export function UserMenu() {
               height={20}
               className="rounded-full"
             />
-            <span>{formatAddress(user.wallet.address)}</span>
+            <span>{address ? formatAddress(address) : user.name.split(' ')[0]}</span>
           </div>
           <ChevronDown className="h-4 w-4" />
         </Button>
@@ -252,10 +262,10 @@ export function UserMenu() {
 
         {/* Account Abstraction Badge */}
         <div className="px-2 py-1.5">
-          <Badge variant="secondary" className="w-full justify-center">
-            <Shield className="mr-1 h-3 w-3" />
-            Smart Account
-          </Badge>
+            <Badge variant="secondary" className="w-full justify-center">
+              <Shield className="mr-1 h-3 w-3" />
+              {connectionType === 'disconnected' ? 'Wallet Disconnected' : `Wallet: ${connectionType.toUpperCase()}`}
+            </Badge>
         </div>
 
         <DropdownMenuSeparator />
@@ -272,17 +282,17 @@ export function UserMenu() {
                 <Copy className="h-3 w-3" />
               </button>
             </div>
-            <p className="mt-1 font-mono text-xs">{formatAddress(user.wallet.address)}</p>
+            <p className="mt-1 font-mono text-xs">{address ? formatAddress(address) : 'Not connected'}</p>
           </div>
 
           <div className="mt-3 flex items-center justify-between">
-            <span className="text-sm text-zinc-600 dark:text-zinc-400">Balance</span>
-            <span className="flex items-center gap-1 font-semibold">
-              <DollarSign className="h-4 w-4" />
-              {user.wallet.balance.toLocaleString()}
-            </span>
+            <span className="text-sm text-zinc-600 dark:text-zinc-400">RLUSD Balance</span>
+              <span className="flex items-center gap-1 font-semibold">
+                <DollarSign className="h-4 w-4" />
+                {isRefreshing ? 'Refreshing...' : `${rlusdBalance.toLocaleString()} RLUSD`}
+              </span>
+            </div>
           </div>
-        </div>
 
         <DropdownMenuSeparator />
 
@@ -297,7 +307,7 @@ export function UserMenu() {
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400">
+        <DropdownMenuItem onClick={() => void handleLogout()} className="text-red-600 dark:text-red-400">
           <LogOut className="mr-2 h-4 w-4" />
           Logout
         </DropdownMenuItem>

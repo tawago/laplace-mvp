@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  CalendarDays,
   Gift,
   Star,
   CheckCircle,
@@ -47,9 +46,9 @@ export function TokenHolderBenefits({ hotelId, hotelName }: TokenHolderBenefitsP
           <div className="flex items-start gap-3">
             <CheckCircle className="h-5 w-5 text-emerald-600 mt-0.5" />
             <div>
-              <p className="font-medium">Priority Booking</p>
+              <p className="font-medium">Priority Access</p>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Advanced reservation access and room preferences
+                Early access to member experiences and premium content
               </p>
             </div>
           </div>
@@ -69,37 +68,36 @@ export function TokenHolderBenefits({ hotelId, hotelName }: TokenHolderBenefitsP
           <div className="flex items-center gap-2 mb-2">
             <Star className="h-4 w-4 text-emerald-600" />
             <span className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
-              Booking Allowance
+              Member Benefits
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-xs">
             <div>
-              <div className="font-bold text-emerald-700 dark:text-emerald-300">3</div>
-              <div className="text-emerald-600 dark:text-emerald-400">Bookings/Year</div>
+              <div className="font-bold text-emerald-700 dark:text-emerald-300">13</div>
+              <div className="text-emerald-600 dark:text-emerald-400">Nights/Year</div>
             </div>
             <div>
-              <div className="font-bold text-emerald-700 dark:text-emerald-300">7</div>
-              <div className="text-emerald-600 dark:text-emerald-400">Max Nights</div>
+              <div className="font-bold text-emerald-700 dark:text-emerald-300">24/7</div>
+              <div className="text-emerald-600 dark:text-emerald-400">Member Access</div>
             </div>
             <div>
               <div className="font-bold text-emerald-700 dark:text-emerald-300">10</div>
-              <div className="text-emerald-600 dark:text-emerald-400">Min Tokens</div>
+              <div className="text-emerald-600 dark:text-emerald-400">Token Threshold</div>
             </div>
           </div>
         </div>
 
         <div className="pt-2">
           {user ? (
-            <Link href="/bookings">
+            <Link href="/portfolio">
               <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
-                <CalendarDays className="mr-2 h-4 w-4" />
-                Book Your Stay
+                View Membership Perks
               </Button>
             </Link>
           ) : (
             <div className="text-center">
               <p className="text-xs text-zinc-600 dark:text-zinc-400 mb-2">
-                Connect your wallet to access booking benefits
+                Connect your wallet to access member-only benefits
               </p>
               <Button variant="outline" className="w-full">
                 Connect Wallet

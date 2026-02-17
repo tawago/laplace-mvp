@@ -16,8 +16,14 @@ import {
   type TokenBalance,
   type WalletInfo,
 } from '@/lib/client/xrpl';
-import { loadWalletSeed, saveWalletSeed } from '@/lib/client/wallet-storage';
+import {
+  clearWalletConnection,
+  clearWalletSeed,
+  loadWalletSeed,
+  saveWalletSeed,
+} from '@/lib/client/wallet-storage';
 import { getTokenCode } from '@/lib/xrpl/currency-codes';
+import { useWallet } from '@/contexts/wallet-context';
 
 interface LendingConfig {
   issuerAddress: string;
@@ -27,6 +33,7 @@ const TOKEN_LIST = ['SAIL', 'NYRA', 'RLUSD'] as const;
 type TokenCode = (typeof TOKEN_LIST)[number];
 
 export default function AdminPage() {
+  const { disconnect } = useWallet();
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [config, setConfig] = useState<LendingConfig | null>(null);
   const [balances, setBalances] = useState<TokenBalance[]>([]);
@@ -189,6 +196,28 @@ export default function AdminPage() {
     [config?.issuerAddress, refreshBalances, refreshTrustlineStatus, wallet]
   );
 
+  const handleClearLocalWallet = useCallback(async () => {
+    setLoading('clear-local-wallet');
+
+    try {
+      clearWalletSeed();
+      clearWalletConnection();
+      await disconnect();
+
+      setWallet(null);
+      setBalances([]);
+      setTrustlineStatus({ SAIL: false, NYRA: false, RLUSD: false });
+      toast.success('Local wallet and wallet connection state cleared');
+    } catch {
+      setWallet(null);
+      setBalances([]);
+      setTrustlineStatus({ SAIL: false, NYRA: false, RLUSD: false });
+      toast.error('Failed to fully disconnect active session, but local wallet metadata was cleared');
+    } finally {
+      setLoading('');
+    }
+  }, [disconnect]);
+
   return (
     <div className="min-h-screen text-slate-100">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
@@ -206,21 +235,35 @@ export default function AdminPage() {
               Current Local Wallet
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {wallet ? (
-              <div className="flex flex-col gap-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge variant="default">Loaded</Badge>
-                  <span className="font-mono">{wallet.address}</span>
-                  <button onClick={copyAddress} aria-label="Copy wallet address" className="text-slate-500 hover:text-slate-700">
-                    <Copy className="h-4 w-4" />
-                  </button>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              {wallet ? (
+                <div className="flex flex-col gap-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default">Loaded</Badge>
+                    <span className="font-mono">{wallet.address}</span>
+                    <button onClick={copyAddress} aria-label="Copy wallet address" className="text-slate-500 hover:text-slate-700">
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500">Regenerate a new wallet only if you want to replace the saved one.</p>
                 </div>
-                <p className="text-xs text-slate-500">Regenerate a new wallet only if you want to replace the saved one.</p>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-600">No wallet in localStorage yet.</p>
-            )}
+              ) : (
+                <p className="text-sm text-slate-600">No wallet in localStorage yet.</p>
+              )}
+            </div>
+
+            <div className="sm:shrink-0">
+              <Button
+                variant="destructive"
+                className="w-full sm:w-auto"
+                onClick={() => void handleClearLocalWallet()}
+                disabled={loading === 'clear-local-wallet'}
+              >
+                {loading === 'clear-local-wallet' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Clear Local Wallet
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
