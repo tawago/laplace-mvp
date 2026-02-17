@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -177,12 +178,16 @@ export function UserMenu() {
                   
                   <div className="mt-4 flex items-center justify-between">
                     <span className="text-sm text-zinc-600 dark:text-zinc-400">RLUSD Balance</span>
-                      <span className="flex items-center gap-1 font-semibold">
-                        <DollarSign className="h-4 w-4" />
-                        {isRefreshing ? 'Refreshing...' : `${rlusdBalance.toLocaleString()} RLUSD`}
-                      </span>
-                    </div>
+                    <span className="flex items-center gap-1 font-semibold">
+                      <DollarSign className="h-4 w-4" />
+                      {isRefreshing ? (
+                        <Skeleton className="h-4 w-28 rounded bg-zinc-200 dark:bg-zinc-600" />
+                      ) : (
+                        `${rlusdBalance.toLocaleString()} RLUSD`
+                      )}
+                    </span>
                   </div>
+                </div>
               </div>
 
               {/* Navigation Menu */}
@@ -287,12 +292,16 @@ export function UserMenu() {
 
           <div className="mt-3 flex items-center justify-between">
             <span className="text-sm text-zinc-600 dark:text-zinc-400">RLUSD Balance</span>
-              <span className="flex items-center gap-1 font-semibold">
-                <DollarSign className="h-4 w-4" />
-                {isRefreshing ? 'Refreshing...' : `${rlusdBalance.toLocaleString()} RLUSD`}
-              </span>
-            </div>
+            <span className="flex items-center gap-1 font-semibold">
+              <DollarSign className="h-4 w-4" />
+              {isRefreshing ? (
+                <Skeleton className="h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-600" />
+              ) : (
+                `${rlusdBalance.toLocaleString()} RLUSD`
+              )}
+            </span>
           </div>
+        </div>
 
         <DropdownMenuSeparator />
 

@@ -1,15 +1,24 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Copy, ExternalLink, Loader2, TrendingUp, Wallet } from 'lucide-react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { InstitutionalUnderwriting } from './components/institutional-underwriting';
+import { PoolOverviewCard } from './components/pool-overview-card';
+import { SupplyActionsCard } from './components/supply-actions-card';
+import { SupplyPositionCard } from './components/supply-position-card';
+import { SupplierActivityCard } from './components/supplier-activity-card';
+import type {
+  LendingConfig,
+  MarketConfig,
+  PoolMetrics,
+  SupplierEvent,
+  SupplyPosition,
+  SupplyPositionMetrics,
+} from './types';
 
 import {
   checkTrustLine,
@@ -18,70 +27,10 @@ import {
   submitVaultDeposit,
   submitVaultWithdrawAllByShares,
   submitVaultWithdraw,
-  type TokenBalance,
   type WalletInfo,
 } from '@/lib/client/xrpl';
 import { loadWalletSeed } from '@/lib/client/wallet-storage';
 import { getTokenSymbol } from '@/lib/xrpl/currency-codes';
-
-interface MarketConfig {
-  id: string;
-  name: string;
-  collateralCurrency: string;
-  debtCurrency: string;
-  debtIssuer: string;
-  supplyVaultId: string | null;
-  supplyMptIssuanceId: string | null;
-  vaultScale: number;
-  baseInterestRate: number;
-  minSupplyAmount: number;
-  reserveFactor: number;
-}
-
-interface LendingConfig {
-  markets: MarketConfig[];
-  issuerAddress: string;
-  backendAddress: string;
-  explorerUrl: string;
-}
-
-interface PoolMetrics {
-  marketId: string;
-  totalSupplied: number;
-  totalBorrowed: number;
-  availableLiquidity: number;
-  utilizationRate: number;
-  borrowApr: number;
-  supplyApr: number;
-  supplyApy: number;
-  globalYieldIndex: number;
-}
-
-interface SupplyPosition {
-  id: string;
-  status: 'ACTIVE' | 'CLOSED';
-  supplyAmount: number;
-  suppliedAt: string;
-}
-
-interface SupplyPositionMetrics {
-  accruedYield: number;
-  withdrawableAmount: number;
-  availableLiquidity: number;
-  utilizationRate: number;
-  supplyApr: number;
-  supplyApy: number;
-}
-
-interface SupplierEvent {
-  id: string;
-  eventType: string;
-  status: 'PENDING' | 'COMPLETED' | 'FAILED';
-  amount: number | null;
-  currency: string | null;
-  createdAt: string;
-  errorMessage: string | null;
-}
 
 function formatAmount(value: number, decimals = 2): string {
   return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: decimals }) : '0';
@@ -104,12 +53,18 @@ export default function LenderPage() {
   const [selectedMarketId, setSelectedMarketId] = useState<string>('');
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [walletReady, setWalletReady] = useState(false);
-  const [balances, setBalances] = useState<TokenBalance[]>([]);
+  const [walletReadyChecked, setWalletReadyChecked] = useState(false);
   const [pool, setPool] = useState<PoolMetrics | null>(null);
   const [position, setPosition] = useState<SupplyPosition | null>(null);
   const [positionMetrics, setPositionMetrics] = useState<SupplyPositionMetrics | null>(null);
   const [shareBalance, setShareBalance] = useState('0');
   const [events, setEvents] = useState<SupplierEvent[]>([]);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [positionLoading, setPositionLoading] = useState(false);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [poolHydrated, setPoolHydrated] = useState(false);
+  const [positionHydrated, setPositionHydrated] = useState(false);
+  const [eventsHydrated, setEventsHydrated] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string>('');
   const [pageLoading, setPageLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -144,41 +99,22 @@ export default function LenderPage() {
     [config?.markets, selectedMarketId]
   );
 
-  const getBalance = useCallback(
-    (currency: string, issuer?: string) => {
-      const targetCurrency = currency.toUpperCase();
-      const targetIssuer = issuer?.toUpperCase();
-      const balance = balances.find((item) => {
-        if (item.currency.toUpperCase() !== targetCurrency) return false;
-        if (!targetIssuer) return true;
-        return (item.issuer ?? '').toUpperCase() === targetIssuer;
-      });
-      return balance ? Number(balance.value) : 0;
-    },
-    [balances]
-  );
-
-  const copyAddress = useCallback(() => {
-    if (!wallet) return;
-    navigator.clipboard.writeText(wallet.address);
-    toast.success('Wallet address copied');
-  }, [wallet]);
-
-  const refreshBalances = useCallback(async () => {
-    if (!wallet?.address) return;
-    const response = await withNetworkLoading(() => fetch(`/api/balances?address=${wallet.address}`));
-    const payload = await response.json();
-    if (payload.success) {
-      setBalances(payload.balances);
-    }
-  }, [wallet?.address, withNetworkLoading]);
-
   const refreshPool = useCallback(async () => {
-    if (!selectedMarketId) return;
-    const response = await withNetworkLoading(() => fetch(`/api/lending/markets/${selectedMarketId}`));
-    const payload = await response.json();
-    if (payload.success) {
-      setPool(payload.data.pool);
+    if (!selectedMarketId) {
+      setPoolHydrated(true);
+      return;
+    }
+    setPoolLoading(true);
+    setPoolHydrated(false);
+    try {
+      const response = await withNetworkLoading(() => fetch(`/api/lending/markets/${selectedMarketId}`));
+      const payload = await response.json();
+      if (payload.success) {
+        setPool(payload.data.pool);
+      }
+    } finally {
+      setPoolLoading(false);
+      setPoolHydrated(true);
     }
   }, [selectedMarketId, withNetworkLoading]);
 
@@ -187,62 +123,80 @@ export default function LenderPage() {
       setPosition(null);
       setPositionMetrics(null);
       setShareBalance('0');
+      setPositionLoading(false);
+      setPositionHydrated(true);
       return;
     }
 
-    const response = await withNetworkLoading(() =>
-      fetch(`/api/lending/markets/${selectedMarketId}/supply-positions/${wallet.address}`)
-    );
-    const payload = await response.json();
+    setPositionLoading(true);
+    setPositionHydrated(false);
+    try {
+      const response = await withNetworkLoading(() =>
+        fetch(`/api/lending/markets/${selectedMarketId}/supply-positions/${wallet.address}`)
+      );
+      const payload = await response.json();
 
-    if (response.status === 404 || payload.error?.code === 'SUPPLY_POSITION_NOT_FOUND') {
-      setPosition(null);
-      setPositionMetrics(null);
-      setShareBalance('0');
-      return;
-    }
+      if (response.status === 404 || payload.error?.code === 'SUPPLY_POSITION_NOT_FOUND') {
+        setPosition(null);
+        setPositionMetrics(null);
+        setShareBalance('0');
+        return;
+      }
 
-    if (payload.success) {
-      setPosition(payload.data.position);
-      setPositionMetrics(payload.data.metrics);
+      if (payload.success) {
+        setPosition(payload.data.position);
+        setPositionMetrics(payload.data.metrics);
 
-      const marketFromResponse = payload.data.market as { supplyMptIssuanceId?: string | null } | undefined;
-      const issuanceId =
-        (typeof marketFromResponse?.supplyMptIssuanceId === 'string' && marketFromResponse.supplyMptIssuanceId) ||
-        selectedMarket?.supplyMptIssuanceId ||
-        null;
+        const marketFromResponse = payload.data.market as { supplyMptIssuanceId?: string | null } | undefined;
+        const issuanceId =
+          (typeof marketFromResponse?.supplyMptIssuanceId === 'string' && marketFromResponse.supplyMptIssuanceId) ||
+          selectedMarket?.supplyMptIssuanceId ||
+          null;
 
-      if (issuanceId) {
-        try {
-          const shares = await getVaultShareBalance(wallet.address, issuanceId);
-          setShareBalance(shares);
-        } catch {
+        if (issuanceId) {
+          try {
+            const shares = await getVaultShareBalance(wallet.address, issuanceId);
+            setShareBalance(shares);
+          } catch {
+            setShareBalance('0');
+          }
+        } else {
           setShareBalance('0');
         }
-      } else {
-        setShareBalance('0');
       }
+    } finally {
+      setPositionLoading(false);
+      setPositionHydrated(true);
     }
   }, [selectedMarket?.supplyMptIssuanceId, selectedMarketId, wallet?.address, withNetworkLoading]);
 
   const refreshEvents = useCallback(async () => {
     if (!wallet?.address || !selectedMarketId) {
       setEvents([]);
+      setEventsLoading(false);
+      setEventsHydrated(true);
       return;
     }
 
-    const response = await withNetworkLoading(() =>
-      fetch(`/api/lending/lenders/${wallet.address}/supply-positions?marketId=${selectedMarketId}`)
-    );
-    const payload = await response.json();
-    if (payload.success) {
-      setEvents(payload.data.events ?? []);
+    setEventsLoading(true);
+    setEventsHydrated(false);
+    try {
+      const response = await withNetworkLoading(() =>
+        fetch(`/api/lending/lenders/${wallet.address}/supply-positions?marketId=${selectedMarketId}`)
+      );
+      const payload = await response.json();
+      if (payload.success) {
+        setEvents(payload.data.events ?? []);
+      }
+    } finally {
+      setEventsLoading(false);
+      setEventsHydrated(true);
     }
   }, [selectedMarketId, wallet?.address, withNetworkLoading]);
 
   const refreshDashboard = useCallback(async () => {
-    await Promise.all([refreshPool(), refreshPosition(), refreshEvents(), refreshBalances()]);
-  }, [refreshBalances, refreshEvents, refreshPool, refreshPosition]);
+    await Promise.all([refreshPool(), refreshPosition(), refreshEvents()]);
+  }, [refreshEvents, refreshPool, refreshPosition]);
 
   useEffect(() => {
     async function loadConfig() {
@@ -287,17 +241,14 @@ export default function LenderPage() {
   }, [selectedMarketId, refreshPool]);
 
   useEffect(() => {
-    if (!wallet?.address) return;
-    refreshBalances();
-  }, [refreshBalances, wallet?.address]);
-
-  useEffect(() => {
     async function checkWalletReadiness() {
       if (!wallet || !selectedMarket || !config?.issuerAddress) {
         setWalletReady(false);
+        setWalletReadyChecked(false);
         return;
       }
 
+      setWalletReadyChecked(false);
       try {
         const trusted = await withNetworkLoading(() =>
           checkTrustLine(
@@ -309,6 +260,8 @@ export default function LenderPage() {
         setWalletReady(trusted);
       } catch {
         setWalletReady(false);
+      } finally {
+        setWalletReadyChecked(true);
       }
     }
 
@@ -507,14 +460,8 @@ export default function LenderPage() {
 
   if (pageLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900">
-        <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-          <div className="h-28 animate-pulse rounded-2xl bg-white shadow-sm" />
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="h-44 animate-pulse rounded-2xl bg-white shadow-sm" />
-            <div className="h-44 animate-pulse rounded-2xl bg-white shadow-sm" />
-          </div>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-900">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
       </div>
     );
   }
@@ -565,28 +512,6 @@ export default function LenderPage() {
                   </option>
                 ))}
               </select>
-
-              {wallet ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900">
-                  <div className="flex items-center gap-2">
-                    <Wallet className="h-4 w-4 text-slate-500" />
-                    <span className="font-mono text-slate-900">
-                      {wallet.address.slice(0, 8)}...{wallet.address.slice(-6)}
-                    </span>
-                    <button onClick={copyAddress} className="text-slate-500 hover:text-slate-700" aria-label="Copy wallet address">
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <Badge variant={walletReady ? 'default' : 'secondary'} className={walletReady ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}>
-                      {walletReady ? 'Ready' : 'Trust line missing'}
-                    </Badge>
-                    <span className="text-xs text-slate-500">
-                      {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : 'Asset'} balance: {formatAmount(getBalance(selectedMarket?.debtCurrency ?? '', selectedMarket?.debtIssuer), 4)}
-                    </span>
-                  </div>
-                </div>
-              ) : null}
             </div>
           </div>
         </div>
@@ -608,232 +533,55 @@ export default function LenderPage() {
           </TabsList>
 
           <TabsContent value="market-action" className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card className="border-slate-200 bg-white shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-base text-slate-900">Pool Overview</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-xs text-slate-500">Total Supplied</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-900">
-                        {formatAmount(pool?.totalSupplied ?? 0, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                      <p className="text-xs text-slate-500">Total Borrowed</p>
-                      <p className="mt-1 text-lg font-semibold text-slate-900">
-                        {formatAmount(pool?.totalBorrowed ?? 0, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
-                      </p>
-                    </div>
-                  </div>
+            {selectedMarket ? (
+              <>
+                <div className="grid gap-6 md:grid-cols-2">
+                  <PoolOverviewCard
+                    isLoading={poolLoading || (!poolHydrated && Boolean(selectedMarketId))}
+                    pool={pool}
+                    market={selectedMarket}
+                    formatAmount={formatAmount}
+                    formatPercent={formatPercent}
+                  />
+                  <SupplyPositionCard
+                    isLoading={
+                      positionLoading || (!positionHydrated && walletReady && Boolean(wallet?.address && selectedMarketId))
+                    }
+                    walletReady={walletReady}
+                    walletReadyChecked={walletReadyChecked}
+                    market={selectedMarket}
+                    position={position}
+                    positionMetrics={positionMetrics}
+                    shareBalance={shareBalance}
+                    formatAmount={formatAmount}
+                    normalizeShares={normalizeShares}
+                  />
+                </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600">Utilization</span>
-                      <span className="font-medium text-slate-900">{formatPercent(pool?.utilizationRate ?? 0)}</span>
-                    </div>
-                    <Progress value={(pool?.utilizationRate ?? 0) * 100} className="h-2 bg-slate-200 [&>[data-slot=progress-indicator]]:bg-slate-700" />
-                  </div>
+                <SupplyActionsCard
+                  market={selectedMarket}
+                  walletReady={walletReady}
+                  walletReadyChecked={walletReadyChecked}
+                  loadingAction={loadingAction}
+                  supplyAmount={supplyAmount}
+                  setSupplyAmount={setSupplyAmount}
+                  withdrawAmount={withdrawAmount}
+                  setWithdrawAmount={setWithdrawAmount}
+                  position={position}
+                  pool={pool}
+                  positionMetrics={positionMetrics}
+                  formatAmount={formatAmount}
+                  onSupply={handleSupply}
+                  onWithdrawSupply={handleWithdrawSupply}
+                  onWithdrawAll={handleWithdrawAll}
+                />
 
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-slate-500">Borrow APR</p>
-                      <p className="mt-1 font-semibold text-slate-900">{formatPercent(pool?.borrowApr ?? selectedMarket?.baseInterestRate ?? 0)}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500">Supply APY</p>
-                      <p className="mt-1 font-semibold text-emerald-600">{formatPercent(pool?.supplyApy ?? 0)}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-slate-200 bg-white shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-base text-slate-900">Your Supply Position</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {!walletReady ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                      You do not have any RLUSD token to lend.
-                    </div>
-                  ) : !position || !positionMetrics ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                      No active supply position yet. Use the Supply tab to open one.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <p className="text-xs text-slate-500">Principal</p>
-                          <p className="mt-1 text-lg font-semibold text-slate-900">
-                            {formatAmount(position.supplyAmount, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
-                          </p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <p className="text-xs text-slate-500">Earnings</p>
-                          <p className="mt-1 text-lg font-semibold text-emerald-600">
-                            {formatAmount(positionMetrics.accruedYield, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
-                          </p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <p className="text-xs text-slate-500">Share</p>
-                          <p className="mt-1 text-lg font-semibold text-slate-900">
-                            {formatAmount(normalizeShares(shareBalance, selectedMarket?.vaultScale ?? 6), 4)} shares
-                          </p>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card className="border-slate-200 bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-base text-slate-900">Supply Actions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="supply" className="w-full">
-                  <TabsList className="mb-6 !bg-slate-100">
-                    <TabsTrigger value="supply" className="data-[state=active]:!bg-white data-[state=active]:!text-slate-900 !text-slate-600">Supply</TabsTrigger>
-                    <TabsTrigger value="withdraw" className="data-[state=active]:!bg-white data-[state=active]:!text-slate-900 !text-slate-600">Withdraw</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="supply" className="space-y-4">
-                    <p className="text-sm text-slate-600">
-                      Minimum supply is {selectedMarket?.minSupplyAmount ?? 0} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}.
-                    </p>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.0001"
-                        value={supplyAmount}
-                        onChange={(event) => setSupplyAmount(event.target.value)}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 sm:w-64"
-                      />
-                      <Button
-                        onClick={handleSupply}
-                        disabled={!walletReady || loadingAction === 'supply'}
-                        className="sm:w-auto bg-slate-900 text-white hover:bg-slate-800"
-                      >
-                        {loadingAction === 'supply' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TrendingUp className="mr-2 h-4 w-4" />}
-                        Supply to Pool
-                      </Button>
-                    </div>
-                    {!walletReady && (
-                      <p className="text-xs text-amber-700">You do not have any RLUSD token to lend.</p>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="withdraw" className="space-y-4">
-                    <p className="text-sm text-slate-600">
-                      Withdraw from your vault-backed supply while respecting pool liquidity constraints.
-                    </p>
-                    <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                      <div>
-                        <p className="text-xs text-slate-500">Withdrawable</p>
-                        <p className="mt-1 font-semibold text-slate-900">
-                          {formatAmount(positionMetrics?.withdrawableAmount ?? 0, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Pool Liquidity</p>
-                        <p className="mt-1 font-semibold text-slate-900">
-                          {formatAmount(positionMetrics?.availableLiquidity ?? pool?.availableLiquidity ?? 0, 4)} {selectedMarket ? getTokenSymbol(selectedMarket.debtCurrency) : ''}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.0001"
-                        value={withdrawAmount}
-                        onChange={(event) => setWithdrawAmount(event.target.value)}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 sm:w-64"
-                      />
-                      <Button
-                        onClick={handleWithdrawSupply}
-                        disabled={!walletReady || loadingAction === 'withdraw-supply'}
-                        variant="outline"
-                        className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900"
-                      >
-                        {loadingAction === 'withdraw-supply' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Withdraw Supply
-                      </Button>
-                      <Button
-                        onClick={handleWithdrawAll}
-                        disabled={!walletReady || !position || position.supplyAmount <= 0 || loadingAction === 'withdraw-all'}
-                        variant="outline"
-                        className="border-rose-300 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
-                      >
-                        {loadingAction === 'withdraw-all' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Withdraw Full Position
-                      </Button>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Full position withdraw redeems all vault shares and avoids asset precision mismatch.
-                    </p>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-
-            <Card className="border-slate-200 bg-white shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-base text-slate-900">Supplier Activity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {events.length === 0 ? (
-                  <p className="text-sm text-slate-500">No supplier activity yet for this market.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {events.slice(0, 8).map((event) => (
-                      <div
-                        key={event.id}
-                        className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant={
-                                event.status === 'COMPLETED'
-                                  ? 'default'
-                                  : event.status === 'FAILED'
-                                  ? 'destructive'
-                                  : 'secondary'
-                              }
-                              className={
-                                event.status === 'COMPLETED'
-                                  ? 'bg-emerald-600 text-white'
-                                  : event.status === 'FAILED'
-                                  ? 'bg-rose-500 text-white'
-                                  : 'bg-slate-200 text-slate-700'
-                              }
-                            >
-                              {event.status}
-                            </Badge>
-                            <span className="truncate text-sm text-slate-900">
-                              {event.eventType.replace('LENDING_', '').replace(/_/g, ' ')}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {event.amount ? `${event.amount} ${event.currency ?? ''}` : 'No amount'}
-                          </p>
-                        </div>
-                        <span className="shrink-0 text-xs text-slate-500">
-                          {new Date(event.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                <SupplierActivityCard
+                  isLoading={eventsLoading || (!eventsHydrated && walletReady && Boolean(wallet?.address && selectedMarketId))}
+                  events={events}
+                />
+              </>
+            ) : null}
           </TabsContent>
 
           <TabsContent value="general-info">
