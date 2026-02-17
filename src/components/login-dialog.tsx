@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { Loader2, Chrome, Twitter, Github, Shield, Zap, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
+import { useWallet } from '@/contexts/wallet-context';
 import { toast } from 'sonner';
 
 interface LoginDialogProps {
@@ -14,19 +15,21 @@ interface LoginDialogProps {
 
 export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
   const { login, isLoading } = useAuth();
+  const { connectLocalWallet } = useWallet();
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 
   const handleLogin = async (provider: 'google' | 'twitter' | 'github') => {
     setSelectedProvider(provider);
     try {
       await login(provider);
+      await connectLocalWallet();
       toast.success('Welcome to Sheng Tai International!', {
-        description: 'Your smart wallet has been created successfully.',
+        description: 'Your smart account is connected to the local admin wallet.',
       });
       onOpenChange(false);
     } catch {
       toast.error('Login failed', {
-        description: 'Please try again later.',
+        description: 'Please make sure a local admin wallet exists, then try again.',
       });
     } finally {
       setSelectedProvider(null);

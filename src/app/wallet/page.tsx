@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AuthGuard } from '@/components/auth-guard';
 import { OnrampDialog } from '@/components/onramp-dialog';
 import { OfframpDialog } from '@/components/offramp-dialog';
+import { LoginDialog } from '@/components/login-dialog';
 import {
   Plus,
   Minus,
@@ -21,8 +22,9 @@ import {
   Clock,
   Shield,
   RefreshCw,
+  Wallet,
 } from 'lucide-react';
-import { useAuth } from '@/contexts/auth-context';
+import { useWallet } from '@/contexts/wallet-context';
 import { toast } from 'sonner';
 
 interface Transaction {
@@ -37,12 +39,18 @@ interface Transaction {
 }
 
 export default function WalletPage() {
-  const { user } = useAuth();
+  const {
+    address,
+    connectionType,
+    error,
+    isRefreshing,
+    refreshBalances,
+    rlusdBalance,
+  } = useWallet();
   const [showOnramp, setShowOnramp] = useState(false);
   const [showOfframp, setShowOfframp] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
-  const [balance, setBalance] = useState(2547.83);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   useEffect(() => {
@@ -104,18 +112,20 @@ export default function WalletPage() {
   }, []);
 
   const handleRefresh = async () => {
-    setIsRefreshing(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsRefreshing(false);
+    if (!address) {
+      toast.error('Connect a wallet first');
+      setShowLogin(true);
+      return;
+    }
+
+    await refreshBalances();
     toast.success('Balance updated');
   };
 
   const copyAddress = () => {
-    if (user) {
-      navigator.clipboard.writeText(user.wallet.address);
-      toast.success('Wallet address copied!');
-    }
+    if (!address) return;
+    navigator.clipboard.writeText(address);
+    toast.success('Wallet address copied!');
   };
 
   const copyTxHash = (txHash: string) => {
@@ -156,7 +166,7 @@ export default function WalletPage() {
   };
 
   const handleOnrampSuccess = (amount: number) => {
-    setBalance(prev => prev + amount);
+    void refreshBalances();
     const newTransaction: Transaction = {
       id: Date.now().toString(),
       type: 'deposit',
@@ -171,7 +181,7 @@ export default function WalletPage() {
   };
 
   const handleOfframpSuccess = (amount: number) => {
-    setBalance(prev => prev - amount);
+    void refreshBalances();
     const newTransaction: Transaction = {
       id: Date.now().toString(),
       type: 'withdrawal',
@@ -195,7 +205,7 @@ export default function WalletPage() {
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">My Wallet</h1>
                 <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-                  Manage your USDC balance and transactions
+                  Manage your RLUSD balance and transactions
                 </p>
               </div>
               
@@ -210,6 +220,27 @@ export default function WalletPage() {
         </div>
 
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+          {connectionType === 'disconnected' ? (
+            <Card className="mb-6 border-dashed">
+              <CardContent className="flex flex-col items-start gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-medium">No wallet connected</p>
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Connect your smart account to load live balances from the local admin wallet.
+                  </p>
+                </div>
+                <Button onClick={() => setShowLogin(true)}>
+                  <Wallet className="mr-2 h-4 w-4" />
+                  Connect Smart Account
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {error ? (
+            <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+          ) : null}
+
           {/* Balance Cards */}
           <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {/* Main Balance */}
@@ -231,18 +262,18 @@ export default function WalletPage() {
               <CardContent>
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-bold">
-                    {showBalance ? `${balance.toFixed(2)}` : '•••••••'}
+                    {showBalance ? `${rlusdBalance.toFixed(2)}` : '•••••••'}
                   </span>
-                  <span className="text-lg text-zinc-600 dark:text-zinc-400">USDC</span>
+                  <span className="text-lg text-zinc-600 dark:text-zinc-400">RLUSD</span>
                 </div>
                 {showBalance && (
                   <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                    ≈ ${(balance * 1.002).toFixed(2)} USD
+                    ≈ ${rlusdBalance.toFixed(2)} USD
                   </p>
                 )}
                 
                 <div className="mt-6 flex gap-3">
-                  <Button onClick={() => setShowOnramp(true)} className="flex-1">
+                  <Button onClick={() => setShowOnramp(true)} className="flex-1" disabled={!address}>
                     <Plus className="mr-2 h-4 w-4" />
                     Deposit
                   </Button>
@@ -250,6 +281,7 @@ export default function WalletPage() {
                     variant="outline" 
                     onClick={() => setShowOfframp(true)}
                     className="flex-1"
+                    disabled={!address}
                   >
                     <Minus className="mr-2 h-4 w-4" />
                     Withdraw
@@ -270,19 +302,19 @@ export default function WalletPage() {
                   <div className="flex items-center gap-2 rounded-lg bg-zinc-100 p-3 dark:bg-zinc-800">
                     <Shield className="h-5 w-5 text-emerald-600" />
                     <div className="flex-1">
-                      <p className="text-xs text-zinc-500">Smart Account</p>
+                      <p className="text-xs text-zinc-500">Connected Wallet</p>
                       <p className="font-mono text-sm">
-                        {user ? formatAddress(user.wallet.address) : ''}
+                        {address ? formatAddress(address) : 'Not connected'}
                       </p>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={copyAddress}>
+                    <Button variant="ghost" size="icon" onClick={copyAddress} disabled={!address}>
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
                   
                   <div className="flex items-center gap-2 text-xs text-zinc-500">
                     <Coins className="h-3 w-3" />
-                    <span>Ethereum (ERC-20)</span>
+                    <span>XRP Ledger</span>
                   </div>
                 </div>
               </CardContent>
@@ -419,9 +451,10 @@ export default function WalletPage() {
         <OfframpDialog 
           open={showOfframp} 
           onOpenChange={setShowOfframp}
-          availableBalance={balance}
+          availableBalance={rlusdBalance}
           onSuccess={handleOfframpSuccess}
         />
+        <LoginDialog open={showLogin} onOpenChange={setShowLogin} />
       </div>
     </AuthGuard>
   );
