@@ -7,7 +7,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { ImageGallery } from '@/components/image-gallery';
 import { HotelImage } from '@/components/hotel-image';
 import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
 import { TokenHolderBenefits } from '@/components/token-holder-benefits';
@@ -124,9 +123,8 @@ export default function HotelPage() {
       {/* Main Content */}
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         <Tabs defaultValue="overview" className="space-y-8">
-          <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
+          <TabsList className="grid w-full grid-cols-3 lg:w-[420px]">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="gallery">Gallery</TabsTrigger>
             <TabsTrigger value="units">Units</TabsTrigger>
             <TabsTrigger value="faq">FAQ</TabsTrigger>
           </TabsList>
@@ -190,15 +188,6 @@ export default function HotelPage() {
 
             {/* Token Holder Benefits */}
             <TokenHolderBenefits hotelId={hotel.id} hotelName={hotel.name} />
-          </TabsContent>
-
-          <TabsContent value="gallery" className="space-y-4">
-            <Card>
-              <CardContent className="p-6">
-                <h2 className="mb-6 text-xl font-bold">Property Gallery</h2>
-                <ImageGallery images={hotel.images} hotelName={hotel.name} />
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="units" className="space-y-4">
