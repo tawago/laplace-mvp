@@ -7,8 +7,8 @@ import {
   loadWalletSeed,
   saveWalletConnection,
 } from '@/lib/client/wallet-storage';
-import { getBalances, getWalletFromSeed, type TokenBalance } from '@/lib/client/xrpl';
-import { TOKEN_CODE_BY_SYMBOL } from '@/lib/xrpl/currency-codes';
+import { checkTrustLine, getBalances, getWalletFromSeed, type TokenBalance } from '@/lib/client/xrpl';
+import { TOKEN_CODE_BY_SYMBOL, normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
 
 export type ConnectionType = 'disconnected' | 'local';
 
@@ -19,22 +19,33 @@ interface WalletContextType {
   rlusdBalance: number;
   isConnecting: boolean;
   isRefreshing: boolean;
+  trustLineStatus: 'idle' | 'checking' | 'ready' | 'missing' | 'error';
+  hasRlusdTrustLine: boolean;
   error: string | null;
   isLocalWalletAvailable: boolean;
   connectLocalWallet: () => Promise<void>;
   disconnect: () => Promise<void>;
-  refreshBalances: () => Promise<void>;
+  refreshBalances: () => Promise<WalletRefreshSnapshot | null>;
+  refreshTrustLineStatus: () => Promise<boolean>;
+}
+
+interface WalletRefreshSnapshot {
+  balances: TokenBalance[];
+  rlusdBalance: number;
+  hasRlusdTrustLine: boolean;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 function parseRlusdBalance(balances: TokenBalance[], issuerAddress: string | null): number {
   const rlusdCode = TOKEN_CODE_BY_SYMBOL.RLUSD.toUpperCase();
-  const issuer = issuerAddress?.toUpperCase();
+  const issuer = issuerAddress?.trim().toUpperCase();
+
+  if (!issuer) return 0;
 
   const line = balances.find((entry) => {
-    if (entry.currency.toUpperCase() !== rlusdCode) return false;
-    if (!issuer) return true;
+    const normalizedCurrency = normalizeCurrencyCode(entry.currency);
+    if (normalizedCurrency !== rlusdCode) return false;
     return (entry.issuer ?? '').toUpperCase() === issuer;
   });
 
@@ -51,6 +62,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [rlusdBalance, setRlusdBalance] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [trustLineStatus, setTrustLineStatus] = useState<'idle' | 'checking' | 'ready' | 'missing' | 'error'>('idle');
+  const [hasRlusdTrustLine, setHasRlusdTrustLine] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLocalWalletAvailable, setIsLocalWalletAvailable] = useState(false);
   const [issuerAddress, setIssuerAddress] = useState<string | null>(null);
@@ -71,24 +84,60 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshTrustLineForAddress = useCallback(
+    async (nextAddress: string): Promise<boolean> => {
+      if (!issuerAddress) {
+        setTrustLineStatus('idle');
+        setHasRlusdTrustLine(false);
+        return false;
+      }
+
+      setTrustLineStatus('checking');
+      try {
+        const hasTrust = await checkTrustLine(nextAddress, issuerAddress, TOKEN_CODE_BY_SYMBOL.RLUSD);
+        setHasRlusdTrustLine(hasTrust);
+        setTrustLineStatus(hasTrust ? 'ready' : 'missing');
+        return hasTrust;
+      } catch {
+        setHasRlusdTrustLine(false);
+        setTrustLineStatus('error');
+        return false;
+      }
+    },
+    [issuerAddress]
+  );
+
   const refreshBalancesForAddress = useCallback(
-    async (nextAddress: string) => {
+    async (nextAddress: string): Promise<WalletRefreshSnapshot | null> => {
       setIsRefreshing(true);
       setError(null);
 
       try {
-        const nextBalances = await getBalances(nextAddress);
+        const [nextBalances, trustlineReady] = await Promise.all([
+          getBalances(nextAddress),
+          refreshTrustLineForAddress(nextAddress),
+        ]);
+        const nextRlusdBalance = parseRlusdBalance(nextBalances, issuerAddress);
         setBalances(nextBalances);
-        setRlusdBalance(parseRlusdBalance(nextBalances, issuerAddress));
+        setRlusdBalance(nextRlusdBalance);
+
+        return {
+          balances: nextBalances,
+          rlusdBalance: nextRlusdBalance,
+          hasRlusdTrustLine: trustlineReady,
+        };
       } catch {
         setError('Failed to refresh wallet balances. Please try again.');
         setBalances([]);
         setRlusdBalance(0);
+        setHasRlusdTrustLine(false);
+        setTrustLineStatus('error');
+        return null;
       } finally {
         setIsRefreshing(false);
       }
     },
-    [issuerAddress]
+    [issuerAddress, refreshTrustLineForAddress]
   );
 
   const resetDisconnectedState = useCallback(() => {
@@ -96,6 +145,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setAddress(null);
     setBalances([]);
     setRlusdBalance(0);
+    setHasRlusdTrustLine(false);
+    setTrustLineStatus('idle');
     setError(null);
   }, []);
 
@@ -133,10 +184,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isConnecting, refreshBalancesForAddress, resetDisconnectedState, updateLocalWalletAvailability]);
 
-  const refreshBalances = useCallback(async () => {
-    if (!address) return;
-    await refreshBalancesForAddress(address);
+  const refreshBalances = useCallback(async (): Promise<WalletRefreshSnapshot | null> => {
+    if (!address) return null;
+    return refreshBalancesForAddress(address);
   }, [address, refreshBalancesForAddress]);
+
+  const refreshTrustLineStatus = useCallback(async (): Promise<boolean> => {
+    if (!address) {
+      setTrustLineStatus('idle');
+      setHasRlusdTrustLine(false);
+      return false;
+    }
+
+    return refreshTrustLineForAddress(address);
+  }, [address, refreshTrustLineForAddress]);
 
   useEffect(() => {
     updateLocalWalletAvailability();
@@ -158,10 +219,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!address) {
       setRlusdBalance(0);
+      setHasRlusdTrustLine(false);
+      setTrustLineStatus('idle');
       return;
     }
     setRlusdBalance(parseRlusdBalance(balances, issuerAddress));
   }, [address, balances, issuerAddress]);
+
+  useEffect(() => {
+    if (!address) return;
+    void refreshTrustLineForAddress(address);
+  }, [address, issuerAddress, refreshTrustLineForAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,10 +281,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       isConnecting,
       isRefreshing,
       error,
+      trustLineStatus,
+      hasRlusdTrustLine,
       isLocalWalletAvailable,
       connectLocalWallet,
       disconnect,
       refreshBalances,
+      refreshTrustLineStatus,
     }),
     [
       address,
@@ -225,11 +296,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       connectionType,
       disconnect,
       error,
+      hasRlusdTrustLine,
       isConnecting,
       isLocalWalletAvailable,
       isRefreshing,
       refreshBalances,
+      refreshTrustLineStatus,
       rlusdBalance,
+      trustLineStatus,
     ]
   );
 

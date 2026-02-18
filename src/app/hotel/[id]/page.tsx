@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,8 +10,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { ImageGallery } from '@/components/image-gallery';
 import { HotelImage } from '@/components/hotel-image';
 import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
+import { OnrampDialog } from '@/components/onramp-dialog';
 import { TokenHolderBenefits } from '@/components/token-holder-benefits';
 import { useAuth } from '@/contexts/auth-context';
+import { useWallet } from '@/contexts/wallet-context';
 import { LoginDialog } from '@/components/login-dialog';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -29,11 +31,13 @@ import {
 import Link from 'next/link';
 import { hotels } from '@/data/hotels';
 import { HotelUnit } from '@/types/hotel';
+import { loadWalletSeed } from '@/lib/client/wallet-storage';
 
 export default function HotelPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { address, rlusdBalance, hasRlusdTrustLine, refreshBalances } = useWallet();
   const hotel = hotels.find(h => h.id === params.id);
   
   const [selectedUnit, setSelectedUnit] = useState<HotelUnit | null>(null);
@@ -41,6 +45,35 @@ export default function HotelPage() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showOnramp, setShowOnramp] = useState(false);
+  const [onrampAmount, setOnrampAmount] = useState(0);
+  const [onOnrampComplete, setOnOnrampComplete] = useState<(() => void) | null>(null);
+  const [walletSeed, setWalletSeed] = useState<string | null>(null);
+  const [issuerAddress, setIssuerAddress] = useState('');
+
+  useEffect(() => {
+    setWalletSeed(loadWalletSeed());
+
+    const loadConfig = async () => {
+      try {
+        const response = await fetch('/api/lending/config');
+        const payload = await response.json();
+        if (payload.success && typeof payload.data?.issuerAddress === 'string') {
+          setIssuerAddress(payload.data.issuerAddress);
+        }
+      } catch {
+        setIssuerAddress('');
+      }
+    };
+
+    void loadConfig();
+  }, []);
+
+  useEffect(() => {
+    if (showConfirmDialog) {
+      setWalletSeed(loadWalletSeed());
+    }
+  }, [address, showConfirmDialog]);
 
   if (!hotel) {
     return <div>Hotel not found</div>;
@@ -66,6 +99,23 @@ export default function HotelPage() {
   const handleConfirmPurchase = () => {
     // This will be called by the confirmation dialog
     // The old checkout dialog is no longer needed
+  };
+
+  const handleOnrampRequest = (amount: number, onComplete: () => void) => {
+    setOnrampAmount(amount);
+    setOnOnrampComplete(() => onComplete);
+    setShowConfirmDialog(false);
+    setShowOnramp(true);
+  };
+
+  const handleOnrampSuccess = async () => {
+    await refreshBalances();
+    setShowOnramp(false);
+    if (onOnrampComplete) {
+      setShowConfirmDialog(true);
+      onOnrampComplete();
+      setOnOnrampComplete(null);
+    }
   };
 
   const handlePurchaseSuccess = () => {
@@ -402,16 +452,36 @@ export default function HotelPage() {
           open={showConfirmDialog}
           onOpenChange={setShowConfirmDialog}
           hotelName={hotel.name}
+          hotelId={hotel.id}
           unitName={selectedUnit.name}
+          unitId={selectedUnit.id}
           unitType={selectedUnit.type}
           tokenAmount={tokenAmount}
           tokenPrice={hotel.tokenPrice}
           totalPrice={subtotal}
           roiPercentage={hotel.roiPercentage}
+          rlusdBalance={rlusdBalance}
+          userAddress={address}
+          walletSeed={walletSeed}
+          issuerAddress={issuerAddress}
+          hasRlusdTrustLine={hasRlusdTrustLine}
+          refreshBalances={refreshBalances}
+          onOnrampRequest={handleOnrampRequest}
           onConfirm={handleConfirmPurchase}
           onSuccess={handlePurchaseSuccess}
         />
       )}
+
+      <OnrampDialog
+        open={showOnramp}
+        onOpenChange={setShowOnramp}
+        userAddress={address ?? ''}
+        initialAmount={onrampAmount}
+        minimumAmount={onrampAmount}
+        onSuccess={() => {
+          void handleOnrampSuccess();
+        }}
+      />
     </div>
   );
 }

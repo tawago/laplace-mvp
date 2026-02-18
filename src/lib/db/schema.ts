@@ -25,6 +25,15 @@ export const supplyPositionStatusEnum = pgEnum('supply_position_status', ['ACTIV
 export const eventModuleEnum = pgEnum('event_module', ['SWAP', 'LENDING', 'FAUCET', 'TRUST', 'SYSTEM']);
 export const eventStatusEnum = pgEnum('event_status', ['PENDING', 'COMPLETED', 'FAILED']);
 export const assetSideEnum = pgEnum('asset_side', ['COLLATERAL', 'DEBT']);
+export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', [
+  'CREATED',
+  'PAYMENT_PENDING',
+  'PAYMENT_CONFIRMED',
+  'TOKEN_PENDING',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+]);
 
 // Users table
 export const users = pgTable(
@@ -213,6 +222,44 @@ export const appEvents = pgTable(
   })
 );
 
+export const purchaseOrders = pgTable(
+  'purchase_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    status: purchaseOrderStatusEnum('status').notNull().default('CREATED'),
+    userAddress: text('user_address').notNull(),
+    hotelId: text('hotel_id').notNull(),
+    unitId: text('unit_id').notNull(),
+    rwaSymbol: text('rwa_symbol').notNull(),
+    rwaCurrency: text('rwa_currency').notNull(),
+    rwaIssuer: text('rwa_issuer').notNull(),
+    paymentCurrency: text('payment_currency').notNull(),
+    paymentIssuer: text('payment_issuer').notNull(),
+    tokenAmount: numeric('token_amount', { precision: 20, scale: 8 }).notNull(),
+    pricePerTokenUsd: numeric('price_per_token_usd', { precision: 20, scale: 8 }).notNull(),
+    totalPaymentAmount: numeric('total_payment_amount', { precision: 20, scale: 8 }).notNull(),
+    paymentTxHash: text('payment_tx_hash'),
+    tokenTxHash: text('token_tx_hash'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    idxPurchaseOrdersUserCreated: index('idx_purchase_orders_user_created').on(
+      table.userAddress,
+      table.createdAt
+    ),
+    idxPurchaseOrdersStatusCreated: index('idx_purchase_orders_status_created').on(
+      table.status,
+      table.createdAt
+    ),
+    idxPurchaseOrdersHotelUnit: index('idx_purchase_orders_hotel_unit').on(table.hotelId, table.unitId),
+  })
+);
+
 // Price oracle table
 export const priceOracle = pgTable(
   'price_oracle',
@@ -253,6 +300,9 @@ export type NewOnchainTransaction = typeof onchainTransactions.$inferInsert;
 
 export type AppEvent = typeof appEvents.$inferSelect;
 export type NewAppEvent = typeof appEvents.$inferInsert;
+
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type NewPurchaseOrder = typeof purchaseOrders.$inferInsert;
 
 export type PriceOracleRow = typeof priceOracle.$inferSelect;
 export type NewPriceOracleRow = typeof priceOracle.$inferInsert;

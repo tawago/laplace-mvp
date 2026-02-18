@@ -1,4 +1,5 @@
 import { Client, Wallet, dropsToXrp } from 'xrpl';
+import { normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
 
 export interface TokenAmount {
   currency: string;
@@ -204,13 +205,13 @@ export async function getAccountBalances(
       account: address,
     });
 
-    for (const line of trustLines.result.lines) {
-      balances.push({
-        currency: line.currency,
-        value: line.balance,
-        issuer: line.account,
-      });
-    }
+      for (const line of trustLines.result.lines) {
+        balances.push({
+          currency: normalizeCurrencyCode(line.currency),
+          value: line.balance,
+          issuer: line.account,
+        });
+      }
   } catch (error: unknown) {
     // Account not found is expected for unfunded wallets
     const isAccountNotFound = error instanceof Error &&
@@ -232,6 +233,7 @@ export async function hasTrustLine(
   issuer: string,
   currency: string
 ): Promise<boolean> {
+  const targetCurrency = normalizeCurrencyCode(currency);
   try {
     const trustLines = await client.request({
       command: 'account_lines',
@@ -239,7 +241,7 @@ export async function hasTrustLine(
       peer: issuer,
     });
 
-    return trustLines.result.lines.some(line => line.currency === currency);
+    return trustLines.result.lines.some((line) => normalizeCurrencyCode(line.currency) === targetCurrency);
   } catch {
     return false;
   }

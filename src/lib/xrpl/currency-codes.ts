@@ -21,3 +21,9 @@ export function getTokenSymbol(currency: string): string {
 
   return currency;
 }
+
+export function normalizeCurrencyCode(currency: string): string {
+  const symbol = getTokenSymbol(currency);
+  const canonical = getTokenCode(symbol);
+  return (canonical ?? currency).toUpperCase();
+}

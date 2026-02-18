@@ -1,6 +1,6 @@
 import { Client, Wallet, decode } from 'xrpl';
 import Decimal from 'decimal.js';
-import { getTokenCode } from '@/lib/xrpl/currency-codes';
+import { getTokenCode, normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
 
 const DEVNET_WS_URL = 'wss://s.devnet.rippletest.net:51233';
 const DEVNET_FAUCET_URL = 'https://faucet.devnet.rippletest.net/accounts';
@@ -446,7 +446,7 @@ export async function checkTrustLine(
   currency: string
 ): Promise<boolean> {
   const client = await getClientBrowser();
-  const normalizedCurrency = getTokenCode(currency) || currency;
+  const normalizedCurrency = normalizeCurrencyCode(getTokenCode(currency) || currency);
 
   try {
     const result = await client.request({
@@ -455,7 +455,7 @@ export async function checkTrustLine(
       peer: issuer,
     });
 
-    return result.result.lines.some(line => line.currency.toUpperCase() === normalizedCurrency.toUpperCase());
+    return result.result.lines.some((line) => normalizeCurrencyCode(line.currency) === normalizedCurrency);
   } catch {
     return false;
   }

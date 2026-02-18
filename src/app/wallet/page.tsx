@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useWallet } from '@/contexts/wallet-context';
 import { toast } from 'sonner';
+import { loadWalletSeed } from '@/lib/client/wallet-storage';
 
 interface Transaction {
   id: string;
@@ -53,8 +54,26 @@ export default function WalletPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [walletSeed, setWalletSeed] = useState<string>('');
+  const [issuerAddress, setIssuerAddress] = useState<string>('');
 
   useEffect(() => {
+    setWalletSeed(loadWalletSeed() ?? '');
+
+    const loadIssuerAddress = async () => {
+      try {
+        const response = await fetch('/api/lending/config');
+        const payload = await response.json();
+        if (payload.success && typeof payload.data?.issuerAddress === 'string') {
+          setIssuerAddress(payload.data.issuerAddress);
+        }
+      } catch {
+        setIssuerAddress('');
+      }
+    };
+
+    void loadIssuerAddress();
+
     // Mock transaction history
     const mockTransactions: Transaction[] = [
       {
@@ -111,6 +130,12 @@ export default function WalletPage() {
 
     setTransactions(mockTransactions);
   }, []);
+
+  useEffect(() => {
+    if (showOfframp) {
+      setWalletSeed(loadWalletSeed() ?? '');
+    }
+  }, [showOfframp]);
 
   const handleRefresh = async () => {
     if (!address) {
@@ -448,15 +473,19 @@ export default function WalletPage() {
         </div>
 
         {/* Dialogs */}
-        <OnrampDialog 
+      <OnrampDialog 
           open={showOnramp} 
           onOpenChange={setShowOnramp}
+          userAddress={address ?? ''}
           onSuccess={handleOnrampSuccess}
         />
         <OfframpDialog 
           open={showOfframp} 
           onOpenChange={setShowOfframp}
           availableBalance={rlusdBalance}
+          userAddress={address ?? ''}
+          walletSeed={walletSeed}
+          issuerAddress={issuerAddress}
           onSuccess={handleOfframpSuccess}
         />
         <LoginDialog open={showLogin} onOpenChange={setShowLogin} />
