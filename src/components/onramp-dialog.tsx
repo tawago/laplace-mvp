@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ArrowRight, Building2, CheckCircle, Clock, CreditCard, Loader2, Smartphone } from 'lucide-react';
+import { ArrowRight, Building2, CheckCircle, Clock, CreditCard, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface OnrampDialogProps {
@@ -47,13 +47,6 @@ const paymentMethods: PaymentMethod[] = [
     icon: Building2,
     fee: '0.5%',
     processingTime: '1-3 business days',
-  },
-  {
-    id: 'pix',
-    name: 'PIX',
-    icon: Smartphone,
-    fee: '1.0%',
-    processingTime: 'Instant',
   },
 ];
 

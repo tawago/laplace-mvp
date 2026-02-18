@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Banknote, Building2, CheckCircle, Clock, CreditCard, Loader2, Smartphone } from 'lucide-react';
+import { Banknote, Building2, CheckCircle, Clock, CreditCard, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { sendTokenToBackend } from '@/lib/client/xrpl';
 
@@ -52,14 +52,6 @@ const withdrawalMethods: WithdrawalMethod[] = [
     fee: '3.5%',
     processingTime: 'Instant',
     minAmount: 10,
-  },
-  {
-    id: 'pix',
-    name: 'PIX',
-    icon: Smartphone,
-    fee: '1.5%',
-    processingTime: 'Instant',
-    minAmount: 25,
   },
 ];
 
@@ -288,7 +280,7 @@ export function OfframpDialog({
               </Button>
               <Button onClick={handleConfirm} disabled={!selectedMethod}>
                 <Banknote className="mr-2 h-4 w-4" />
-                Confirm Withdrawal
+                Confirm Offramp
               </Button>
             </DialogFooter>
           </>
