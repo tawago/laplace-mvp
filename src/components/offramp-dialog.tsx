@@ -18,7 +18,6 @@ import {
   Loader2,
   CreditCard,
   Building2,
-  Smartphone,
   CheckCircle,
   Clock,
   Shield,
@@ -60,20 +59,10 @@ const withdrawalMethods: WithdrawalMethod[] = [
     id: 'card',
     name: 'Debit Card',
     icon: CreditCard,
-    description: 'Instant withdrawal to debit card',
+    description: 'Instant offramp to debit card',
     fee: '3.5%',
     processingTime: 'Instant',
     minAmount: 10,
-    available: true,
-  },
-  {
-    id: 'pix',
-    name: 'PIX',
-    icon: Smartphone,
-    description: 'Instant PIX transfer (Brazil)',
-    fee: '1.5%',
-    processingTime: 'Instant',
-    minAmount: 25,
     available: true,
   },
 ];
@@ -96,9 +85,9 @@ export function OfframpDialog({
   });
   
   const processingSteps = [
-    'Validating withdrawal request...',
+    'Validating offramp request...',
     'Converting USDC to USD...',
-    'Processing withdrawal...',
+    'Processing offramp...',
     'Transferring funds...',
     'Transaction complete!',
   ];
@@ -109,7 +98,7 @@ export function OfframpDialog({
 
   const handleAmountNext = () => {
     if (amount < 10) {
-      toast.error('Minimum withdrawal is 10 USDC');
+      toast.error('Minimum offramp amount is 10 USDC');
       return;
     }
     if (amount > availableBalance) {
@@ -146,7 +135,7 @@ export function OfframpDialog({
     setTimeout(() => {
       onOpenChange(false);
       if (onSuccess) onSuccess(amount);
-      toast.success('Withdrawal successful!', {
+      toast.success('Offramp successful!', {
         description: `$${netAmount.toFixed(2)} will be transferred to your account`,
       });
       // Reset for next use
@@ -194,9 +183,9 @@ export function OfframpDialog({
         {step === 'amount' && (
           <>
             <DialogHeader>
-              <DialogTitle>Withdraw Funds</DialogTitle>
+              <DialogTitle>Offramp Funds</DialogTitle>
               <DialogDescription>
-                Convert your USDC to cash and withdraw to your account
+                Convert your USDC to cash and offramp to your account
               </DialogDescription>
             </DialogHeader>
 
@@ -219,7 +208,7 @@ export function OfframpDialog({
 
               {/* Amount Input */}
               <div className="space-y-3">
-                <label className="text-sm font-medium">Withdrawal Amount (USDC)</label>
+                <label className="text-sm font-medium">Offramp Amount (USDC)</label>
                 <div className="relative">
                   <Coins className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <input
@@ -290,7 +279,7 @@ export function OfframpDialog({
         {step === 'method' && (
           <>
             <DialogHeader>
-              <DialogTitle>Choose Withdrawal Method</DialogTitle>
+              <DialogTitle>Choose Offramp Method</DialogTitle>
               <DialogDescription>
                 Select how you&apos;d like to receive your funds
               </DialogDescription>
@@ -342,11 +331,11 @@ export function OfframpDialog({
         {step === 'details' && selectedMethod && (
           <>
             <DialogHeader>
-              <DialogTitle>Withdrawal Details</DialogTitle>
+              <DialogTitle>Offramp Details</DialogTitle>
               <DialogDescription>
                 {selectedMethod.id === 'bank' 
                   ? 'Enter your bank account details'
-                  : 'Confirm your withdrawal details'
+                  : 'Confirm your offramp details'
                 }
               </DialogDescription>
             </DialogHeader>
@@ -402,7 +391,7 @@ export function OfframpDialog({
               <Card className="bg-zinc-50 dark:bg-zinc-900">
                 <CardContent className="p-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span>Withdrawal Amount</span>
+                    <span>Offramp Amount</span>
                     <span>{amount.toFixed(2)} USDC</span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -421,12 +410,12 @@ export function OfframpDialog({
                 </CardContent>
               </Card>
 
-              <Alert>
-                <Shield className="h-4 w-4" />
-                <AlertDescription>
-                  Withdrawals are processed securely and cannot be reversed once confirmed.
-                </AlertDescription>
-              </Alert>
+                <Alert>
+                  <Shield className="h-4 w-4" />
+                  <AlertDescription>
+                    Offramps are processed securely and cannot be reversed once confirmed.
+                  </AlertDescription>
+                </Alert>
             </div>
 
             <DialogFooter>
@@ -438,7 +427,7 @@ export function OfframpDialog({
                 disabled={!isFormValid}
               >
                 <Banknote className="mr-2 h-4 w-4" />
-                Confirm Withdrawal
+                Confirm Offramp
               </Button>
             </DialogFooter>
           </>
@@ -447,9 +436,9 @@ export function OfframpDialog({
         {step === 'processing' && (
           <>
             <DialogHeader>
-              <DialogTitle>Processing Withdrawal</DialogTitle>
+              <DialogTitle>Processing Offramp</DialogTitle>
               <DialogDescription>
-                Please wait while we process your withdrawal
+                Please wait while we process your offramp
               </DialogDescription>
             </DialogHeader>
 
@@ -502,9 +491,9 @@ export function OfframpDialog({
         {step === 'success' && (
           <>
             <DialogHeader>
-              <DialogTitle>Withdrawal Successful!</DialogTitle>
+              <DialogTitle>Offramp Successful!</DialogTitle>
               <DialogDescription>
-                Your withdrawal has been processed
+                Your offramp has been processed
               </DialogDescription>
             </DialogHeader>
 
@@ -517,7 +506,7 @@ export function OfframpDialog({
 
               <div className="text-center space-y-2">
                 <p className="text-lg font-semibold">
-                  ${netAmount.toFixed(2)} withdrawal initiated!
+                  ${netAmount.toFixed(2)} offramp initiated!
                 </p>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">
                   Funds will arrive in {selectedMethod?.processingTime.toLowerCase()}

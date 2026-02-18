@@ -83,7 +83,7 @@ export default function WalletPage() {
         amount: 10000,
         currency: 'USDC',
         status: 'completed',
-        description: 'Bank Transfer Deposit',
+        description: 'Bank Transfer Onramp',
         date: new Date('2024-01-10'),
         txHash: '0x9876...5432',
       },
@@ -103,7 +103,7 @@ export default function WalletPage() {
         amount: -2500,
         currency: 'USDC',
         status: 'pending',
-        description: 'Bank Transfer Withdrawal',
+        description: 'Bank Transfer Offramp',
         date: new Date('2024-11-25'),
         txHash: '0x5555...6666',
       },
@@ -174,7 +174,7 @@ export default function WalletPage() {
       amount: amount,
       currency: 'USDC',
       status: 'completed',
-      description: 'Deposit via Onramp',
+      description: 'Onramp via Bank Transfer',
       date: new Date(),
       txHash: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`,
     };
@@ -189,7 +189,7 @@ export default function WalletPage() {
       amount: -amount,
       currency: 'USDC',
       status: 'pending',
-      description: 'Withdrawal via Offramp',
+      description: 'Offramp via Bank Transfer',
       date: new Date(),
       txHash: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`,
     };
@@ -276,7 +276,7 @@ export default function WalletPage() {
                 <div className="mt-6 flex gap-3">
                   <Button onClick={() => setShowOnramp(true)} className="flex-1" disabled={!address}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Deposit
+                    Onramp
                   </Button>
                   <Button 
                     variant="outline" 
@@ -285,7 +285,7 @@ export default function WalletPage() {
                     disabled={!address}
                   >
                     <Minus className="mr-2 h-4 w-4" />
-                    Withdraw
+                    Offramp
                   </Button>
                 </div>
               </CardContent>
@@ -335,8 +335,8 @@ export default function WalletPage() {
               <Tabs defaultValue="all" className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="all">All</TabsTrigger>
-                  <TabsTrigger value="deposits">Deposits</TabsTrigger>
-                  <TabsTrigger value="withdrawals">Withdrawals</TabsTrigger>
+                  <TabsTrigger value="deposits">Onramps</TabsTrigger>
+                  <TabsTrigger value="withdrawals">Offramps</TabsTrigger>
                   <TabsTrigger value="dividends">Dividends</TabsTrigger>
                 </TabsList>
 

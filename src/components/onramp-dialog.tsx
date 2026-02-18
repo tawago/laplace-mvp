@@ -18,7 +18,6 @@ import {
   Loader2,
   CreditCard,
   Building2,
-  Smartphone,
   CheckCircle,
   DollarSign,
   ArrowRight,
@@ -63,15 +62,6 @@ const paymentMethods: PaymentMethod[] = [
     processingTime: '1-3 business days',
     available: true,
   },
-  {
-    id: 'pix',
-    name: 'PIX',
-    icon: Smartphone,
-    description: 'Brazilian instant payment',
-    fee: '1.0%',
-    processingTime: 'Instant',
-    available: true,
-  },
 ];
 
 export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProps) {
@@ -84,7 +74,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
     'Validating payment details...',
     'Processing payment...',
     'Converting to USDC...',
-    'Depositing to wallet...',
+    'Onramping to wallet...',
     'Transaction complete!',
   ];
 
@@ -94,7 +84,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
 
   const handleAmountNext = () => {
     if (amount < 10) {
-      toast.error('Minimum deposit is $10');
+      toast.error('Minimum onramp amount is $10');
       return;
     }
     setStep('payment');
@@ -122,8 +112,8 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
     setTimeout(() => {
       onOpenChange(false);
       if (onSuccess) onSuccess(usdcAmount);
-      toast.success('Deposit successful!', {
-        description: `${usdcAmount.toFixed(2)} USDC deposited to your wallet`,
+      toast.success('Onramp successful!', {
+        description: `${usdcAmount.toFixed(2)} USDC was onramped to your wallet`,
       });
       // Reset for next use
       setTimeout(() => {
@@ -155,7 +145,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
         {step === 'amount' && (
           <>
             <DialogHeader>
-              <DialogTitle>Deposit Funds</DialogTitle>
+              <DialogTitle>Onramp Funds</DialogTitle>
               <DialogDescription>
                 Add funds to your wallet to purchase tokens
               </DialogDescription>
@@ -164,7 +154,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
             <div className="space-y-6">
               {/* Amount Input */}
               <div className="space-y-3">
-                <label className="text-sm font-medium">Deposit Amount (USD)</label>
+                <label className="text-sm font-medium">Onramp Amount (USD)</label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <input
@@ -238,7 +228,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
             <DialogHeader>
               <DialogTitle>Choose Payment Method</DialogTitle>
               <DialogDescription>
-                Select how you&apos;d like to fund your deposit
+                Select how you&apos;d like to fund your onramp
               </DialogDescription>
             </DialogHeader>
 
@@ -286,7 +276,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
                 <Card className="bg-zinc-50 dark:bg-zinc-900">
                   <CardContent className="p-4 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span>Deposit Amount</span>
+                      <span>Onramp Amount</span>
                       <span>${amount.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -325,7 +315,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
         {step === 'processing' && (
           <>
             <DialogHeader>
-              <DialogTitle>Processing Deposit</DialogTitle>
+              <DialogTitle>Processing Onramp</DialogTitle>
               <DialogDescription>
                 Please wait while we process your payment
               </DialogDescription>
@@ -380,7 +370,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
         {step === 'success' && (
           <>
             <DialogHeader>
-              <DialogTitle>Deposit Successful!</DialogTitle>
+              <DialogTitle>Onramp Successful!</DialogTitle>
               <DialogDescription>
                 Your funds have been added to your wallet
               </DialogDescription>
@@ -395,7 +385,7 @@ export function OnrampDialog({ open, onOpenChange, onSuccess }: OnrampDialogProp
 
               <div className="text-center space-y-2">
                 <p className="text-lg font-semibold">
-                  {usdcAmount.toFixed(2)} USDC deposited successfully!
+                  {usdcAmount.toFixed(2)} USDC onramped successfully!
                 </p>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">
                   Funds are now available in your wallet
