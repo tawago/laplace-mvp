@@ -12,6 +12,7 @@ import {
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRight,
   Shield,
   Copy,
   Landmark
@@ -64,6 +65,8 @@ export default function PortfolioPage() {
   const totalTokens = portfolio.reduce((sum, p) => sum + p.tokenAmount, 0);
   const estimatedAnnualReturn = portfolio.reduce((sum, p) => sum + (p.totalPrice * p.estimatedROI / 100), 0);
   const currentValue = portfolio.reduce((sum, holding) => sum + holding.currentValue, 0);
+  const totalGain = currentValue - totalInvested;
+  const totalGainPercentage = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
 
   const copyAddress = () => {
     if (user) {
@@ -140,9 +143,20 @@ export default function PortfolioPage() {
                 <div>
                   <p className="text-sm text-zinc-600 dark:text-zinc-400">Current Value</p>
                   <p className="mt-1 text-2xl font-bold">${currentValue.toLocaleString()}</p>
-                  <p className="mt-1 flex items-center text-xs text-emerald-600">
-                    <ArrowUpRight className="mr-1 h-3 w-3" />
-                    +5.0%
+                  <p
+                    className={`mt-1 flex items-center text-xs ${
+                      totalGain > 0 ? 'text-emerald-600' : totalGain < 0 ? 'text-red-600' : 'text-zinc-500'
+                    }`}
+                  >
+                    {totalGain > 0 ? (
+                      <ArrowUpRight className="mr-1 h-3 w-3" />
+                    ) : totalGain < 0 ? (
+                      <ArrowDownRight className="mr-1 h-3 w-3" />
+                    ) : (
+                      <ArrowRight className="mr-1 h-3 w-3" />
+                    )}
+                    {totalGain > 0 ? '+' : ''}
+                    {totalGainPercentage.toFixed(1)}%
                   </p>
                 </div>
                 <div className="rounded-lg bg-emerald-100 p-3 dark:bg-emerald-900/20">
@@ -227,8 +241,18 @@ export default function PortfolioPage() {
                         <td className="py-4">
                           <div>
                             <p className="font-medium">${purchase.currentValue.toFixed(0)}</p>
-                            <p className={`flex items-center text-xs ${gain > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {gain > 0 ? <ArrowUpRight className="mr-1 h-3 w-3" /> : <ArrowDownRight className="mr-1 h-3 w-3" />}
+                            <p
+                              className={`flex items-center text-xs ${
+                                gain > 0 ? 'text-emerald-600' : gain < 0 ? 'text-red-600' : 'text-zinc-500'
+                              }`}
+                            >
+                              {gain > 0 ? (
+                                <ArrowUpRight className="mr-1 h-3 w-3" />
+                              ) : gain < 0 ? (
+                                <ArrowDownRight className="mr-1 h-3 w-3" />
+                              ) : (
+                                <ArrowRight className="mr-1 h-3 w-3" />
+                              )}
                               {gain > 0 ? '+' : ''}{gainPercentage.toFixed(1)}%
                             </p>
                           </div>

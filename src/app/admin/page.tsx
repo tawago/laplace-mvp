@@ -8,7 +8,6 @@ import { Copy, Loader2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
-  checkTrustLine,
   fundWalletFromFaucet,
   generateWallet,
   getWalletFromSeed,
@@ -33,7 +32,13 @@ const TOKEN_LIST = ['SAIL', 'NYRA', 'RLUSD'] as const;
 type TokenCode = (typeof TOKEN_LIST)[number];
 
 export default function AdminPage() {
-  const { disconnect } = useWallet();
+  const {
+    disconnect,
+    connectLocalWallet,
+    trustLineStatusByToken,
+    hasTrustLineByToken,
+    refreshTrustLineStatuses,
+  } = useWallet();
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [config, setConfig] = useState<LendingConfig | null>(null);
   const [balances, setBalances] = useState<TokenBalance[]>([]);
@@ -41,7 +46,7 @@ export default function AdminPage() {
   const [credentialSubject, setCredentialSubject] = useState('');
   const [credentialExpiration, setCredentialExpiration] = useState('');
   const [credentialTxHash, setCredentialTxHash] = useState<string | null>(null);
-  const [trustlineStatus, setTrustlineStatus] = useState<Record<TokenCode, boolean>>({
+  const [trustlineEstablishing, setTrustlineEstablishing] = useState<Record<TokenCode, boolean>>({
     SAIL: false,
     NYRA: false,
     RLUSD: false,
@@ -74,24 +79,6 @@ export default function AdminPage() {
     [balances, config?.issuerAddress]
   );
 
-  const refreshTrustlineStatus = useCallback(async () => {
-    if (!wallet?.address || !config?.issuerAddress) {
-      setTrustlineStatus({ SAIL: false, NYRA: false, RLUSD: false });
-      return;
-    }
-
-    const checks = await Promise.all(
-      TOKEN_LIST.map(async (token) => {
-        const currencyCode = getTokenCode(token);
-        if (!currencyCode) return [token, false] as const;
-        const ok = await checkTrustLine(wallet.address, config.issuerAddress, currencyCode);
-        return [token, ok] as const;
-      })
-    );
-
-    setTrustlineStatus(Object.fromEntries(checks) as Record<TokenCode, boolean>);
-  }, [config?.issuerAddress, wallet?.address]);
-
   useEffect(() => {
     async function init() {
       try {
@@ -122,8 +109,8 @@ export default function AdminPage() {
   }, [wallet?.address]);
 
   useEffect(() => {
-    refreshTrustlineStatus();
-  }, [refreshTrustlineStatus]);
+    void refreshTrustLineStatuses();
+  }, [refreshTrustLineStatuses]);
 
   const copyAddress = useCallback(() => {
     if (!wallet) return;
@@ -134,9 +121,11 @@ export default function AdminPage() {
   const handleGenerateWallet = useCallback(async () => {
     setLoading('generate');
     try {
+      await disconnect();
       const nextWallet = generateWallet();
       saveWalletSeed(nextWallet.seed);
       setWallet(nextWallet);
+      setTrustlineEstablishing({ SAIL: false, NYRA: false, RLUSD: false });
 
       const fundResult = await fundWalletFromFaucet(nextWallet.address);
       if (!fundResult.funded) {
@@ -144,66 +133,50 @@ export default function AdminPage() {
         return;
       }
 
+      if (!config?.issuerAddress) {
+        await refreshBalances(nextWallet.address);
+        toast.error('Wallet generated and XRP funded, but issuer config is unavailable for trust lines.');
+        return;
+      }
+
+      const failedTokens: TokenCode[] = [];
+      for (const token of TOKEN_LIST) {
+        const currencyCode = getTokenCode(token);
+        if (!currencyCode) {
+          failedTokens.push(token);
+          continue;
+        }
+
+        setTrustlineEstablishing((prev) => ({ ...prev, [token]: true }));
+        try {
+          const trustLine = await submitTrustLine(nextWallet.seed, config.issuerAddress, currencyCode);
+          if (trustLine.result !== 'tesSUCCESS') {
+            failedTokens.push(token);
+          }
+        } catch {
+          failedTokens.push(token);
+        } finally {
+          setTrustlineEstablishing((prev) => ({ ...prev, [token]: false }));
+        }
+      }
+
       await refreshBalances(nextWallet.address);
-      toast.success('New wallet generated, saved, and funded with XRP');
+      await connectLocalWallet();
+      await refreshTrustLineStatuses();
+
+      if (failedTokens.length > 0) {
+        toast.error(
+          `Wallet generated and funded. Trust line setup failed for: ${failedTokens.join(', ')}`
+        );
+      } else {
+        toast.success('New wallet generated, funded with XRP, and trust lines established.');
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to generate wallet');
     } finally {
       setLoading('');
     }
-  }, [refreshBalances]);
-
-  const handleTokenFaucet = useCallback(
-    async (token: TokenCode) => {
-      if (!wallet) {
-        toast.error('Generate a wallet first');
-        return;
-      }
-
-      if (!config?.issuerAddress) {
-        toast.error('Issuer config unavailable');
-        return;
-      }
-
-      const loadingKey = `faucet-${token}`;
-      setLoading(loadingKey);
-
-      try {
-        const currencyCode = getTokenCode(token);
-        if (!currencyCode) {
-          toast.error(`Unsupported token ${token}`);
-          return;
-        }
-
-        const trustLine = await submitTrustLine(wallet.seed, config.issuerAddress, currencyCode);
-        if (trustLine.result !== 'tesSUCCESS') {
-          toast.error(`Trust line setup failed for ${token}: ${trustLine.result}`);
-          return;
-        }
-
-        const response = await fetch('/api/faucet', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userAddress: wallet.address, token }),
-        });
-        const payload = await response.json();
-
-        if (!payload.success) {
-          toast.error(payload.error || `Faucet failed for ${token}`);
-          return;
-        }
-
-        await refreshBalances(wallet.address);
-        await refreshTrustlineStatus();
-        toast.success(`Received ${payload.amount} ${payload.token}`);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : `Faucet failed for ${token}`);
-      } finally {
-        setLoading('');
-      }
-    },
-    [config?.issuerAddress, refreshBalances, refreshTrustlineStatus, wallet]
-  );
+  }, [config?.issuerAddress, connectLocalWallet, disconnect, refreshBalances, refreshTrustLineStatuses]);
 
   const handleClearLocalWallet = useCallback(async () => {
     setLoading('clear-local-wallet');
@@ -215,12 +188,12 @@ export default function AdminPage() {
 
       setWallet(null);
       setBalances([]);
-      setTrustlineStatus({ SAIL: false, NYRA: false, RLUSD: false });
+      setTrustlineEstablishing({ SAIL: false, NYRA: false, RLUSD: false });
       toast.success('Local wallet and wallet connection state cleared');
     } catch {
       setWallet(null);
       setBalances([]);
-      setTrustlineStatus({ SAIL: false, NYRA: false, RLUSD: false });
+      setTrustlineEstablishing({ SAIL: false, NYRA: false, RLUSD: false });
       toast.error('Failed to fully disconnect active session, but local wallet metadata was cleared');
     } finally {
       setLoading('');
@@ -323,15 +296,19 @@ export default function AdminPage() {
         </Card>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Token faucets are deprecated. You can now get RLUSD, SAIL, and NYRA from Wallet and Property purchase flows.
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Generate New Wallet</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-slate-600">Creates a fresh wallet, saves seed in localStorage, and auto-funds XRP.</p>
+              <p className="text-sm text-slate-600">Creates a fresh wallet, saves seed in localStorage, auto-funds XRP, and establishes SAIL/NYRA/RLUSD trust lines.</p>
               <Button onClick={handleGenerateWallet} disabled={loading === 'generate'} className="w-full">
                 {loading === 'generate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Generate + Fund XRP
+                Generate + Fund
               </Button>
             </CardContent>
           </Card>
@@ -341,26 +318,28 @@ export default function AdminPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   Faucet {token}
-                  <span
-                    className={`inline-block h-2.5 w-2.5 rounded-full ${
-                      trustlineStatus[token] ? 'bg-emerald-500' : 'bg-slate-300'
-                    }`}
-                    title={trustlineStatus[token] ? `${token} trust line ready` : `${token} trust line missing`}
-                  />
+                  {trustlineEstablishing[token] || trustLineStatusByToken[token] === 'checking' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                  ) : (
+                    <span
+                      className={`inline-block h-2.5 w-2.5 rounded-full ${
+                        hasTrustLineByToken[token] ? 'bg-emerald-500' : 'bg-slate-300'
+                      }`}
+                      title={hasTrustLineByToken[token] ? `${token} trust line ready` : `${token} trust line missing`}
+                    />
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-slate-600">
-                  Creates trust line and sends {token === 'RLUSD' ? '1000' : '100'} {token}.
+                  Deprecated. Use Wallet page for RLUSD and Property pages for SAIL/NYRA purchases.
                 </p>
                 <Button
-                  onClick={() => handleTokenFaucet(token)}
-                  disabled={loading === `faucet-${token}` || !wallet}
+                  disabled
                   className="w-full"
                   variant="outline"
                 >
-                  {loading === `faucet-${token}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Request {token}
+                  Request {token} (Deprecated)
                 </Button>
               </CardContent>
             </Card>

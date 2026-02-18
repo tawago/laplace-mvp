@@ -11,6 +11,26 @@ import { checkTrustLine, getBalances, getWalletFromSeed, type TokenBalance } fro
 import { TOKEN_CODE_BY_SYMBOL, normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
 
 export type ConnectionType = 'disconnected' | 'local';
+export type AppToken = 'RLUSD' | 'SAIL' | 'NYRA';
+type TokenTrustLineStatus = 'idle' | 'checking' | 'ready' | 'missing' | 'error';
+
+const APP_TOKENS: AppToken[] = ['RLUSD', 'SAIL', 'NYRA'];
+
+function createDefaultTrustLineStatus(): Record<AppToken, TokenTrustLineStatus> {
+  return {
+    RLUSD: 'idle',
+    SAIL: 'idle',
+    NYRA: 'idle',
+  };
+}
+
+function createDefaultTrustLineFlags(): Record<AppToken, boolean> {
+  return {
+    RLUSD: false,
+    SAIL: false,
+    NYRA: false,
+  };
+}
 
 interface WalletContextType {
   connectionType: ConnectionType;
@@ -19,20 +39,24 @@ interface WalletContextType {
   rlusdBalance: number;
   isConnecting: boolean;
   isRefreshing: boolean;
-  trustLineStatus: 'idle' | 'checking' | 'ready' | 'missing' | 'error';
+  trustLineStatus: TokenTrustLineStatus;
   hasRlusdTrustLine: boolean;
+  trustLineStatusByToken: Record<AppToken, TokenTrustLineStatus>;
+  hasTrustLineByToken: Record<AppToken, boolean>;
   error: string | null;
   isLocalWalletAvailable: boolean;
   connectLocalWallet: () => Promise<void>;
   disconnect: () => Promise<void>;
   refreshBalances: () => Promise<WalletRefreshSnapshot | null>;
   refreshTrustLineStatus: () => Promise<boolean>;
+  refreshTrustLineStatuses: () => Promise<Record<AppToken, boolean>>;
 }
 
 interface WalletRefreshSnapshot {
   balances: TokenBalance[];
   rlusdBalance: number;
   hasRlusdTrustLine: boolean;
+  hasTrustLineByToken: Record<AppToken, boolean>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -62,8 +86,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [rlusdBalance, setRlusdBalance] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [trustLineStatus, setTrustLineStatus] = useState<'idle' | 'checking' | 'ready' | 'missing' | 'error'>('idle');
-  const [hasRlusdTrustLine, setHasRlusdTrustLine] = useState(false);
+  const [trustLineStatusByToken, setTrustLineStatusByToken] = useState<Record<AppToken, TokenTrustLineStatus>>(
+    createDefaultTrustLineStatus
+  );
+  const [hasTrustLineByToken, setHasTrustLineByToken] = useState<Record<AppToken, boolean>>(
+    createDefaultTrustLineFlags
+  );
   const [error, setError] = useState<string | null>(null);
   const [isLocalWalletAvailable, setIsLocalWalletAvailable] = useState(false);
   const [issuerAddress, setIssuerAddress] = useState<string | null>(null);
@@ -84,24 +112,46 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const refreshTrustLineForAddress = useCallback(
-    async (nextAddress: string): Promise<boolean> => {
+  const refreshTrustLinesForAddress = useCallback(
+    async (nextAddress: string): Promise<Record<AppToken, boolean>> => {
       if (!issuerAddress) {
-        setTrustLineStatus('idle');
-        setHasRlusdTrustLine(false);
-        return false;
+        setTrustLineStatusByToken(createDefaultTrustLineStatus());
+        setHasTrustLineByToken(createDefaultTrustLineFlags());
+        return createDefaultTrustLineFlags();
       }
 
-      setTrustLineStatus('checking');
+      setTrustLineStatusByToken((prev) => {
+        const next = { ...prev };
+        for (const token of APP_TOKENS) {
+          next[token] = 'checking';
+        }
+        return next;
+      });
+
       try {
-        const hasTrust = await checkTrustLine(nextAddress, issuerAddress, TOKEN_CODE_BY_SYMBOL.RLUSD);
-        setHasRlusdTrustLine(hasTrust);
-        setTrustLineStatus(hasTrust ? 'ready' : 'missing');
-        return hasTrust;
+        const checks = await Promise.all(
+          APP_TOKENS.map(async (token) => {
+            const hasTrust = await checkTrustLine(nextAddress, issuerAddress, TOKEN_CODE_BY_SYMBOL[token]);
+            return [token, hasTrust] as const;
+          })
+        );
+
+        const nextFlags = Object.fromEntries(checks) as Record<AppToken, boolean>;
+        setHasTrustLineByToken(nextFlags);
+        setTrustLineStatusByToken({
+          RLUSD: nextFlags.RLUSD ? 'ready' : 'missing',
+          SAIL: nextFlags.SAIL ? 'ready' : 'missing',
+          NYRA: nextFlags.NYRA ? 'ready' : 'missing',
+        });
+        return nextFlags;
       } catch {
-        setHasRlusdTrustLine(false);
-        setTrustLineStatus('error');
-        return false;
+        setHasTrustLineByToken(createDefaultTrustLineFlags());
+        setTrustLineStatusByToken({
+          RLUSD: 'error',
+          SAIL: 'error',
+          NYRA: 'error',
+        });
+        return createDefaultTrustLineFlags();
       }
     },
     [issuerAddress]
@@ -113,9 +163,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       try {
-        const [nextBalances, trustlineReady] = await Promise.all([
+        const [nextBalances, trustlineFlags] = await Promise.all([
           getBalances(nextAddress),
-          refreshTrustLineForAddress(nextAddress),
+          refreshTrustLinesForAddress(nextAddress),
         ]);
         const nextRlusdBalance = parseRlusdBalance(nextBalances, issuerAddress);
         setBalances(nextBalances);
@@ -124,20 +174,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         return {
           balances: nextBalances,
           rlusdBalance: nextRlusdBalance,
-          hasRlusdTrustLine: trustlineReady,
+          hasRlusdTrustLine: trustlineFlags.RLUSD,
+          hasTrustLineByToken: trustlineFlags,
         };
       } catch {
         setError('Failed to refresh wallet balances. Please try again.');
         setBalances([]);
         setRlusdBalance(0);
-        setHasRlusdTrustLine(false);
-        setTrustLineStatus('error');
+        setHasTrustLineByToken(createDefaultTrustLineFlags());
+        setTrustLineStatusByToken({
+          RLUSD: 'error',
+          SAIL: 'error',
+          NYRA: 'error',
+        });
         return null;
       } finally {
         setIsRefreshing(false);
       }
     },
-    [issuerAddress, refreshTrustLineForAddress]
+    [issuerAddress, refreshTrustLinesForAddress]
   );
 
   const resetDisconnectedState = useCallback(() => {
@@ -145,8 +200,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setAddress(null);
     setBalances([]);
     setRlusdBalance(0);
-    setHasRlusdTrustLine(false);
-    setTrustLineStatus('idle');
+    setHasTrustLineByToken(createDefaultTrustLineFlags());
+    setTrustLineStatusByToken(createDefaultTrustLineStatus());
     setError(null);
   }, []);
 
@@ -191,13 +246,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const refreshTrustLineStatus = useCallback(async (): Promise<boolean> => {
     if (!address) {
-      setTrustLineStatus('idle');
-      setHasRlusdTrustLine(false);
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
       return false;
     }
 
-    return refreshTrustLineForAddress(address);
-  }, [address, refreshTrustLineForAddress]);
+    const flags = await refreshTrustLinesForAddress(address);
+    return flags.RLUSD;
+  }, [address, refreshTrustLinesForAddress]);
+
+  const refreshTrustLineStatuses = useCallback(async (): Promise<Record<AppToken, boolean>> => {
+    if (!address) {
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
+      return createDefaultTrustLineFlags();
+    }
+
+    return refreshTrustLinesForAddress(address);
+  }, [address, refreshTrustLinesForAddress]);
 
   useEffect(() => {
     updateLocalWalletAvailability();
@@ -219,8 +285,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!address) {
       setRlusdBalance(0);
-      setHasRlusdTrustLine(false);
-      setTrustLineStatus('idle');
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
       return;
     }
     setRlusdBalance(parseRlusdBalance(balances, issuerAddress));
@@ -228,8 +294,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!address) return;
-    void refreshTrustLineForAddress(address);
-  }, [address, issuerAddress, refreshTrustLineForAddress]);
+    void refreshTrustLinesForAddress(address);
+  }, [address, issuerAddress, refreshTrustLinesForAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -281,13 +347,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       isConnecting,
       isRefreshing,
       error,
-      trustLineStatus,
-      hasRlusdTrustLine,
+      trustLineStatus: trustLineStatusByToken.RLUSD,
+      hasRlusdTrustLine: hasTrustLineByToken.RLUSD,
+      trustLineStatusByToken,
+      hasTrustLineByToken,
       isLocalWalletAvailable,
       connectLocalWallet,
       disconnect,
       refreshBalances,
       refreshTrustLineStatus,
+      refreshTrustLineStatuses,
     }),
     [
       address,
@@ -296,14 +365,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       connectionType,
       disconnect,
       error,
-      hasRlusdTrustLine,
+      hasTrustLineByToken,
       isConnecting,
       isLocalWalletAvailable,
       isRefreshing,
       refreshBalances,
       refreshTrustLineStatus,
+      refreshTrustLineStatuses,
       rlusdBalance,
-      trustLineStatus,
+      trustLineStatusByToken,
     ]
   );
 
