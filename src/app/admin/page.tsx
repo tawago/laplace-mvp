@@ -38,6 +38,9 @@ export default function AdminPage() {
   const [config, setConfig] = useState<LendingConfig | null>(null);
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState<string>('');
+  const [credentialSubject, setCredentialSubject] = useState('');
+  const [credentialExpiration, setCredentialExpiration] = useState('');
+  const [credentialTxHash, setCredentialTxHash] = useState<string | null>(null);
   const [trustlineStatus, setTrustlineStatus] = useState<Record<TokenCode, boolean>>({
     SAIL: false,
     NYRA: false,
@@ -111,6 +114,12 @@ export default function AdminPage() {
 
     init();
   }, [refreshBalances]);
+
+  useEffect(() => {
+    if (wallet?.address) {
+      setCredentialSubject(wallet.address);
+    }
+  }, [wallet?.address]);
 
   useEffect(() => {
     refreshTrustlineStatus();
@@ -217,6 +226,52 @@ export default function AdminPage() {
       setLoading('');
     }
   }, [disconnect]);
+
+  const handleCreateCredential = useCallback(async () => {
+    if (!credentialSubject) {
+      toast.error('Subject address is required');
+      return;
+    }
+
+    const expirationUnixRaw = credentialExpiration
+      ? Math.floor(new Date(credentialExpiration).getTime() / 1000)
+      : null;
+
+    if (credentialExpiration && (expirationUnixRaw === null || !Number.isFinite(expirationUnixRaw) || expirationUnixRaw <= 0)) {
+      toast.error('Invalid expiration date');
+      return;
+    }
+
+    const expirationUnix = expirationUnixRaw ?? undefined;
+
+    setLoading('issue-credential');
+    setCredentialTxHash(null);
+    try {
+      const response = await fetch('/api/credentials/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subjectAddress: credentialSubject,
+          credentialType: 'KYC_VERIFIED',
+          ...(expirationUnix ? { expiration: expirationUnix } : {}),
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.success) {
+        toast.error(payload.error || 'Failed to create credential');
+        return;
+      }
+
+      const txHash = payload.data?.txHash as string | undefined;
+      setCredentialTxHash(txHash ?? null);
+      toast.success('Credential created. Acceptance pending on subject wallet.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create credential');
+    } finally {
+      setLoading('');
+    }
+  }, [credentialExpiration, credentialSubject]);
 
   return (
     <div className="min-h-screen text-slate-100">
@@ -333,6 +388,45 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Issue Test Credential</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm text-slate-600">Subject Address</label>
+              <input
+                type="text"
+                value={credentialSubject}
+                onChange={(event) => setCredentialSubject(event.target.value)}
+                placeholder="r..."
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-slate-600">Expiration (optional)</label>
+              <input
+                type="datetime-local"
+                value={credentialExpiration}
+                onChange={(event) => setCredentialExpiration(event.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              />
+            </div>
+
+            <Button onClick={() => void handleCreateCredential()} disabled={loading === 'issue-credential'}>
+              {loading === 'issue-credential' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Create Credential
+            </Button>
+
+            {credentialTxHash ? (
+              <p className="text-sm text-slate-600">
+                Created credential tx: <span className="font-mono">{credentialTxHash}</span>
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
