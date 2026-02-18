@@ -19,6 +19,12 @@ export function signTransactionJson(seed: string, txJson: Record<string, unknown
   return decode(signed.tx_blob) as Record<string, unknown>;
 }
 
+export function signTransactionBlob(seed: string, txJson: Record<string, unknown>): string {
+  const wallet = Wallet.fromSeed(seed);
+  const signed = wallet.sign(txJson as never);
+  return signed.tx_blob;
+}
+
 export interface TokenBalance {
   currency: string;
   value: string;
@@ -105,6 +111,22 @@ async function getClientBrowser(): Promise<Client> {
   }
 
   return clientInstance;
+}
+
+export async function buildCredentialAcceptAutofilledTx(
+  account: string,
+  issuer: string,
+  credentialTypeHex: string
+): Promise<Record<string, unknown>> {
+  const client = await getClientBrowser();
+  const tx = await client.autofill({
+    TransactionType: 'CredentialAccept',
+    Account: account,
+    Issuer: issuer,
+    CredentialType: credentialTypeHex.toUpperCase(),
+  } as never);
+
+  return tx as unknown as Record<string, unknown>;
 }
 
 /**

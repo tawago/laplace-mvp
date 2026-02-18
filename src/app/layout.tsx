@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/auth-context";
 import { WalletProvider } from "@/contexts/wallet-context";
+import { CredentialsProvider } from '@/contexts/credentials-context';
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,10 +42,12 @@ export default function RootLayout({
         >
           <AuthProvider>
             <WalletProvider>
-              <Header />
-              <main className="min-h-[calc(100vh-4rem)]">{children}</main>
-              <Footer />
-              <Toaster />
+              <CredentialsProvider>
+                <Header />
+                <main className="min-h-[calc(100vh-4rem)]">{children}</main>
+                <Footer />
+                <Toaster />
+              </CredentialsProvider>
             </WalletProvider>
           </AuthProvider>
         </ThemeProvider>

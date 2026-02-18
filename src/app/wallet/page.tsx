@@ -9,6 +9,7 @@ import { AuthGuard } from '@/components/auth-guard';
 import { OnrampDialog } from '@/components/onramp-dialog';
 import { OfframpDialog } from '@/components/offramp-dialog';
 import { LoginDialog } from '@/components/login-dialog';
+import { VerificationCard } from '@/components/verification-card';
 import {
   Plus,
   Minus,
@@ -319,6 +320,10 @@ export default function WalletPage() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+
+          <div className="mb-8">
+            <VerificationCard />
           </div>
 
           {/* Transactions */}

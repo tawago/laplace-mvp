@@ -72,3 +72,12 @@ export function getLoanBrokerId(): string {
 
   return brokerId;
 }
+
+export function getCredentialIssuerWallet(): Wallet {
+  const seed = process.env.CREDENTIAL_ISSUER_SEED || process.env.ISSUER_WALLET_SEED;
+  if (!seed) {
+    throw new Error('CREDENTIAL_ISSUER_SEED or ISSUER_WALLET_SEED not configured');
+  }
+
+  return Wallet.fromSeed(seed);
+}

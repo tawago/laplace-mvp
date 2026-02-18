@@ -33,11 +33,15 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 import { useWallet } from '@/contexts/wallet-context';
+import { useCredentials } from '@/contexts/credentials-context';
+import { CREDENTIAL_TYPES } from '@/lib/xrpl/credentials/types';
+import { VerifiedBadge } from '@/components/verified-badge';
 import { toast } from 'sonner';
 
 export function UserMenu() {
   const { user, logout } = useAuth();
   const { address, connectionType, disconnect, isRefreshing, refreshBalances, rlusdBalance } = useWallet();
+  const { credentials, verificationLevel, isLoading: isCredentialsLoading, acceptCredential } = useCredentials();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -81,6 +85,27 @@ export function UserMenu() {
     logout();
     toast.success('Logged out successfully');
     setIsOpen(false);
+  };
+
+  const verifiedCredential = credentials.find(
+    (credential) =>
+      credential.credentialTypeHex === CREDENTIAL_TYPES.KYC_VERIFIED && credential.accepted && !credential.expired
+  );
+
+  const pendingCredential = credentials.find(
+    (credential) =>
+      credential.credentialTypeHex === CREDENTIAL_TYPES.KYC_VERIFIED && !credential.accepted && !credential.expired
+  );
+
+  const handleAcceptCredential = async () => {
+    if (!pendingCredential) return;
+
+    try {
+      await acceptCredential(pendingCredential.issuer, pendingCredential.credentialTypeHex);
+      toast.success('Credential accepted');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to accept credential');
+    }
   };
 
   const menuItems = [
@@ -163,7 +188,7 @@ export function UserMenu() {
               </SheetHeader>
 
               {/* Wallet Info */}
-              <div className="border-b p-6">
+                <div className="border-b p-6">
                 <div className="rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-zinc-600 dark:text-zinc-400">Wallet Address</span>
@@ -175,6 +200,26 @@ export function UserMenu() {
                     </button>
                   </div>
                   <p className="font-mono text-sm">{address ? formatAddress(address) : 'Not connected'}</p>
+
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-sm text-zinc-600 dark:text-zinc-400">Verification Status</span>
+                    <VerifiedBadge
+                      verificationLevel={verificationLevel}
+                      isLoading={isCredentialsLoading}
+                      verifiedCredential={verifiedCredential}
+                    />
+                  </div>
+
+                  {pendingCredential ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 w-full"
+                      onClick={() => void handleAcceptCredential()}
+                    >
+                      Accept Credential
+                    </Button>
+                  ) : null}
                   
                   <div className="mt-4 flex items-center justify-between">
                     <span className="text-sm text-zinc-600 dark:text-zinc-400">RLUSD Balance</span>
@@ -288,6 +333,26 @@ export function UserMenu() {
               </button>
             </div>
             <p className="mt-1 font-mono text-xs">{address ? formatAddress(address) : 'Not connected'}</p>
+
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs text-zinc-500">Verification Status</span>
+              <VerifiedBadge
+                verificationLevel={verificationLevel}
+                isLoading={isCredentialsLoading}
+                verifiedCredential={verifiedCredential}
+              />
+            </div>
+
+            {pendingCredential ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 h-7 w-full text-xs"
+                onClick={() => void handleAcceptCredential()}
+              >
+                Accept Credential
+              </Button>
+            ) : null}
           </div>
 
           <div className="mt-3 flex items-center justify-between">
