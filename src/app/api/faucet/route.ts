@@ -21,6 +21,11 @@ const TOKENS = {
 
 type FaucetToken = keyof typeof TOKENS;
 
+/**
+ * @deprecated UI-based token faucets are deprecated.
+ * Prefer `/api/onramp` for RLUSD funding and `/api/purchase` for RLUSD->RWA purchase flow.
+ * This endpoint is kept for backward compatibility in local/dev tooling.
+ */
 export async function POST(request: NextRequest) {
   try {
     const { userAddress, token } = await request.json();

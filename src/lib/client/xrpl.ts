@@ -1,6 +1,6 @@
 import { Client, Wallet, decode } from 'xrpl';
 import Decimal from 'decimal.js';
-import { getTokenCode } from '@/lib/xrpl/currency-codes';
+import { getTokenCode, normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
 
 const DEVNET_WS_URL = 'wss://s.devnet.rippletest.net:51233';
 const DEVNET_FAUCET_URL = 'https://faucet.devnet.rippletest.net/accounts';
@@ -210,6 +210,54 @@ export async function submitTrustLine(
     hash: tx.result.hash,
     result,
   };
+}
+
+export async function submitTrustLinesParallelWithIncrementalSequence(
+  seed: string,
+  issuer: string,
+  currencies: string[],
+  limit: string = '1000000'
+): Promise<Array<{ currency: string; hash: string; result: string }>> {
+  const client = await getClientBrowser();
+  const wallet = Wallet.fromSeed(seed);
+  const normalizedCurrencies = currencies.map((currency) => getTokenCode(currency) || currency);
+
+  const accountInfo = await client.request({
+    command: 'account_info',
+    account: wallet.address,
+    ledger_index: 'current',
+  });
+  const baseSequence = accountInfo.result.account_data.Sequence;
+
+  const submissions = normalizedCurrencies.map(async (currency, index) => {
+    const intendedSequence = baseSequence + index;
+    const tx = await client.autofill({
+      TransactionType: 'TrustSet',
+      Account: wallet.address,
+      LimitAmount: {
+        currency,
+        issuer,
+        value: limit,
+      },
+      Sequence: intendedSequence,
+    } as never);
+
+    (tx as { Sequence: number }).Sequence = intendedSequence;
+
+    const submitResult = await client.submitAndWait(tx as never, {
+      wallet,
+      autofill: false,
+    } as never);
+    const result = extractResultCode(submitResult.result.meta);
+
+    return {
+      currency,
+      hash: submitResult.result.hash,
+      result,
+    };
+  });
+
+  return Promise.all(submissions);
 }
 
 /**
@@ -446,7 +494,7 @@ export async function checkTrustLine(
   currency: string
 ): Promise<boolean> {
   const client = await getClientBrowser();
-  const normalizedCurrency = getTokenCode(currency) || currency;
+  const normalizedCurrency = normalizeCurrencyCode(getTokenCode(currency) || currency);
 
   try {
     const result = await client.request({
@@ -455,7 +503,7 @@ export async function checkTrustLine(
       peer: issuer,
     });
 
-    return result.result.lines.some(line => line.currency.toUpperCase() === normalizedCurrency.toUpperCase());
+    return result.result.lines.some((line) => normalizeCurrencyCode(line.currency) === normalizedCurrency);
   } catch {
     return false;
   }

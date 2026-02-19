@@ -5,12 +5,51 @@ import {
   clearWalletConnection,
   loadWalletConnection,
   loadWalletSeed,
+  loadWalletTrustLineFlags,
   saveWalletConnection,
+  saveWalletTrustLineFlags,
+  type WalletTrustLineFlags,
 } from '@/lib/client/wallet-storage';
-import { getBalances, getWalletFromSeed, type TokenBalance } from '@/lib/client/xrpl';
-import { TOKEN_CODE_BY_SYMBOL } from '@/lib/xrpl/currency-codes';
+import { checkTrustLine, getBalances, getWalletFromSeed, type TokenBalance } from '@/lib/client/xrpl';
+import { TOKEN_CODE_BY_SYMBOL, normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
 
 export type ConnectionType = 'disconnected' | 'local';
+export type AppToken = 'RLUSD' | 'SAIL' | 'NYRA';
+type TokenTrustLineStatus = 'idle' | 'checking' | 'ready' | 'missing' | 'error';
+
+const APP_TOKENS: AppToken[] = ['RLUSD', 'SAIL', 'NYRA'];
+
+function createDefaultTrustLineStatus(): Record<AppToken, TokenTrustLineStatus> {
+  return {
+    RLUSD: 'idle',
+    SAIL: 'idle',
+    NYRA: 'idle',
+  };
+}
+
+function createDefaultTrustLineFlags(): Record<AppToken, boolean> {
+  return {
+    RLUSD: false,
+    SAIL: false,
+    NYRA: false,
+  };
+}
+
+function toWalletTrustLineFlags(flags: Record<AppToken, boolean>): WalletTrustLineFlags {
+  return {
+    RLUSD: flags.RLUSD,
+    SAIL: flags.SAIL,
+    NYRA: flags.NYRA,
+  };
+}
+
+function toStatusMap(flags: Record<AppToken, boolean>): Record<AppToken, TokenTrustLineStatus> {
+  return {
+    RLUSD: flags.RLUSD ? 'ready' : 'missing',
+    SAIL: flags.SAIL ? 'ready' : 'missing',
+    NYRA: flags.NYRA ? 'ready' : 'missing',
+  };
+}
 
 interface WalletContextType {
   connectionType: ConnectionType;
@@ -19,22 +58,37 @@ interface WalletContextType {
   rlusdBalance: number;
   isConnecting: boolean;
   isRefreshing: boolean;
+  trustLineStatus: TokenTrustLineStatus;
+  hasRlusdTrustLine: boolean;
+  trustLineStatusByToken: Record<AppToken, TokenTrustLineStatus>;
+  hasTrustLineByToken: Record<AppToken, boolean>;
   error: string | null;
   isLocalWalletAvailable: boolean;
   connectLocalWallet: () => Promise<void>;
   disconnect: () => Promise<void>;
-  refreshBalances: () => Promise<void>;
+  refreshBalances: () => Promise<WalletRefreshSnapshot | null>;
+  refreshTrustLineStatus: () => Promise<boolean>;
+  refreshTrustLineStatuses: () => Promise<Record<AppToken, boolean>>;
+}
+
+interface WalletRefreshSnapshot {
+  balances: TokenBalance[];
+  rlusdBalance: number;
+  hasRlusdTrustLine: boolean;
+  hasTrustLineByToken: Record<AppToken, boolean>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 function parseRlusdBalance(balances: TokenBalance[], issuerAddress: string | null): number {
   const rlusdCode = TOKEN_CODE_BY_SYMBOL.RLUSD.toUpperCase();
-  const issuer = issuerAddress?.toUpperCase();
+  const issuer = issuerAddress?.trim().toUpperCase();
+
+  if (!issuer) return 0;
 
   const line = balances.find((entry) => {
-    if (entry.currency.toUpperCase() !== rlusdCode) return false;
-    if (!issuer) return true;
+    const normalizedCurrency = normalizeCurrencyCode(entry.currency);
+    if (normalizedCurrency !== rlusdCode) return false;
     return (entry.issuer ?? '').toUpperCase() === issuer;
   });
 
@@ -51,6 +105,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [rlusdBalance, setRlusdBalance] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [trustLineStatusByToken, setTrustLineStatusByToken] = useState<Record<AppToken, TokenTrustLineStatus>>(
+    createDefaultTrustLineStatus
+  );
+  const [hasTrustLineByToken, setHasTrustLineByToken] = useState<Record<AppToken, boolean>>(
+    createDefaultTrustLineFlags
+  );
   const [error, setError] = useState<string | null>(null);
   const [isLocalWalletAvailable, setIsLocalWalletAvailable] = useState(false);
   const [issuerAddress, setIssuerAddress] = useState<string | null>(null);
@@ -71,24 +131,106 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshTrustLinesForAddress = useCallback(
+    async (nextAddress: string): Promise<Record<AppToken, boolean>> => {
+      if (!issuerAddress) {
+        setTrustLineStatusByToken(createDefaultTrustLineStatus());
+        setHasTrustLineByToken(createDefaultTrustLineFlags());
+        return createDefaultTrustLineFlags();
+      }
+
+      setTrustLineStatusByToken((prev) => {
+        const next = { ...prev };
+        for (const token of APP_TOKENS) {
+          next[token] = 'checking';
+        }
+        return next;
+      });
+
+      try {
+        const checks = await Promise.all(
+          APP_TOKENS.map(async (token) => {
+            const hasTrust = await checkTrustLine(nextAddress, issuerAddress, TOKEN_CODE_BY_SYMBOL[token]);
+            return [token, hasTrust] as const;
+          })
+        );
+
+        const nextFlags = Object.fromEntries(checks) as Record<AppToken, boolean>;
+        setHasTrustLineByToken(nextFlags);
+        setTrustLineStatusByToken(toStatusMap(nextFlags));
+        saveWalletTrustLineFlags(nextAddress, issuerAddress, toWalletTrustLineFlags(nextFlags));
+        return nextFlags;
+      } catch {
+        setHasTrustLineByToken(createDefaultTrustLineFlags());
+        setTrustLineStatusByToken({
+          RLUSD: 'error',
+          SAIL: 'error',
+          NYRA: 'error',
+        });
+        return createDefaultTrustLineFlags();
+      }
+    },
+    [issuerAddress]
+  );
+
   const refreshBalancesForAddress = useCallback(
-    async (nextAddress: string) => {
+    async (
+      nextAddress: string,
+      options?: {
+        skipTrustLineRefresh?: boolean;
+      }
+    ): Promise<WalletRefreshSnapshot | null> => {
       setIsRefreshing(true);
       setError(null);
 
       try {
-        const nextBalances = await getBalances(nextAddress);
+        const nextBalancesPromise = getBalances(nextAddress);
+        const trustlineFlagsPromise = options?.skipTrustLineRefresh
+          ? Promise.resolve(
+              issuerAddress
+                ? (loadWalletTrustLineFlags(nextAddress, issuerAddress) ?? createDefaultTrustLineFlags())
+                : createDefaultTrustLineFlags()
+            )
+          : refreshTrustLinesForAddress(nextAddress);
+
+        const [nextBalances, trustlineFlags] = await Promise.all([nextBalancesPromise, trustlineFlagsPromise]);
+
+        if (options?.skipTrustLineRefresh && issuerAddress) {
+          const normalizedFlags: Record<AppToken, boolean> = {
+            RLUSD: Boolean(trustlineFlags.RLUSD),
+            SAIL: Boolean(trustlineFlags.SAIL),
+            NYRA: Boolean(trustlineFlags.NYRA),
+          };
+          setHasTrustLineByToken(normalizedFlags);
+          setTrustLineStatusByToken(toStatusMap(normalizedFlags));
+        }
+
+        const nextRlusdBalance = parseRlusdBalance(nextBalances, issuerAddress);
         setBalances(nextBalances);
-        setRlusdBalance(parseRlusdBalance(nextBalances, issuerAddress));
+        setRlusdBalance(nextRlusdBalance);
+
+        return {
+          balances: nextBalances,
+          rlusdBalance: nextRlusdBalance,
+          hasRlusdTrustLine: trustlineFlags.RLUSD,
+          hasTrustLineByToken: trustlineFlags,
+        };
       } catch {
         setError('Failed to refresh wallet balances. Please try again.');
         setBalances([]);
         setRlusdBalance(0);
+        setHasTrustLineByToken(createDefaultTrustLineFlags());
+        setTrustLineStatusByToken({
+          RLUSD: 'error',
+          SAIL: 'error',
+          NYRA: 'error',
+        });
+        return null;
       } finally {
         setIsRefreshing(false);
       }
     },
-    [issuerAddress]
+    [issuerAddress, refreshTrustLinesForAddress]
   );
 
   const resetDisconnectedState = useCallback(() => {
@@ -96,6 +238,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setAddress(null);
     setBalances([]);
     setRlusdBalance(0);
+    setHasTrustLineByToken(createDefaultTrustLineFlags());
+    setTrustLineStatusByToken(createDefaultTrustLineStatus());
     setError(null);
   }, []);
 
@@ -133,10 +277,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isConnecting, refreshBalancesForAddress, resetDisconnectedState, updateLocalWalletAvailability]);
 
-  const refreshBalances = useCallback(async () => {
-    if (!address) return;
-    await refreshBalancesForAddress(address);
+  const refreshBalances = useCallback(async (): Promise<WalletRefreshSnapshot | null> => {
+    if (!address) return null;
+    return refreshBalancesForAddress(address);
   }, [address, refreshBalancesForAddress]);
+
+  const refreshTrustLineStatus = useCallback(async (): Promise<boolean> => {
+    if (!address) {
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
+      return false;
+    }
+
+    const flags = await refreshTrustLinesForAddress(address);
+    return flags.RLUSD;
+  }, [address, refreshTrustLinesForAddress]);
+
+  const refreshTrustLineStatuses = useCallback(async (): Promise<Record<AppToken, boolean>> => {
+    if (!address) {
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
+      return createDefaultTrustLineFlags();
+    }
+
+    return refreshTrustLinesForAddress(address);
+  }, [address, refreshTrustLinesForAddress]);
 
   useEffect(() => {
     updateLocalWalletAvailability();
@@ -158,10 +323,30 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!address) {
       setRlusdBalance(0);
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
       return;
     }
     setRlusdBalance(parseRlusdBalance(balances, issuerAddress));
   }, [address, balances, issuerAddress]);
+
+  useEffect(() => {
+    if (!address || !issuerAddress) return;
+    const cached = loadWalletTrustLineFlags(address, issuerAddress);
+    if (!cached) {
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
+      return;
+    }
+
+    const nextFlags: Record<AppToken, boolean> = {
+      RLUSD: cached.RLUSD,
+      SAIL: cached.SAIL,
+      NYRA: cached.NYRA,
+    };
+    setHasTrustLineByToken(nextFlags);
+    setTrustLineStatusByToken(toStatusMap(nextFlags));
+  }, [address, issuerAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,11 +368,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const localWallet = getWalletFromSeed(seed);
           if (cancelled) return;
 
-          setConnectionType('local');
-          setAddress(localWallet.address);
-          await refreshBalancesForAddress(localWallet.address);
-          return;
-        }
+            setConnectionType('local');
+            setAddress(localWallet.address);
+            await refreshBalancesForAddress(localWallet.address, { skipTrustLineRefresh: true });
+            return;
+          }
       } catch {
         clearWalletConnection();
         if (!cancelled) {
@@ -213,10 +398,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       isConnecting,
       isRefreshing,
       error,
+      trustLineStatus: trustLineStatusByToken.RLUSD,
+      hasRlusdTrustLine: hasTrustLineByToken.RLUSD,
+      trustLineStatusByToken,
+      hasTrustLineByToken,
       isLocalWalletAvailable,
       connectLocalWallet,
       disconnect,
       refreshBalances,
+      refreshTrustLineStatus,
+      refreshTrustLineStatuses,
     }),
     [
       address,
@@ -225,11 +416,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       connectionType,
       disconnect,
       error,
+      hasTrustLineByToken,
       isConnecting,
       isLocalWalletAvailable,
       isRefreshing,
       refreshBalances,
+      refreshTrustLineStatus,
+      refreshTrustLineStatuses,
       rlusdBalance,
+      trustLineStatusByToken,
     ]
   );
 

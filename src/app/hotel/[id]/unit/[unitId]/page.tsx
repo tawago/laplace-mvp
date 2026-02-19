@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,12 +35,16 @@ import { hotels } from '@/data/hotels';
 import { useAuth } from '@/contexts/auth-context';
 import { LoginDialog } from '@/components/login-dialog';
 import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
+import { OnrampDialog } from '@/components/onramp-dialog';
 import { toast } from 'sonner';
+import { useWallet } from '@/contexts/wallet-context';
+import { loadWalletSeed } from '@/lib/client/wallet-storage';
 
 export default function UnitDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { address, rlusdBalance, hasRlusdTrustLine, refreshBalances } = useWallet();
   const hotel = hotels.find(h => h.id === params.id);
   const unit = hotel?.units.find(u => u.id === params.unitId);
   
@@ -49,6 +53,35 @@ export default function UnitDetailPage() {
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [purchaseAmount, setPurchaseAmount] = useState(100);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showOnramp, setShowOnramp] = useState(false);
+  const [onrampAmount, setOnrampAmount] = useState(0);
+  const [onOnrampComplete, setOnOnrampComplete] = useState<(() => void) | null>(null);
+  const [walletSeed, setWalletSeed] = useState<string | null>(null);
+  const [issuerAddress, setIssuerAddress] = useState('');
+
+  useEffect(() => {
+    setWalletSeed(loadWalletSeed());
+
+    const loadConfig = async () => {
+      try {
+        const response = await fetch('/api/lending/config');
+        const payload = await response.json();
+        if (payload.success && typeof payload.data?.issuerAddress === 'string') {
+          setIssuerAddress(payload.data.issuerAddress);
+        }
+      } catch {
+        setIssuerAddress('');
+      }
+    };
+
+    void loadConfig();
+  }, []);
+
+  useEffect(() => {
+    if (showConfirmDialog) {
+      setWalletSeed(loadWalletSeed());
+    }
+  }, [address, showConfirmDialog]);
 
   if (!hotel || !unit) {
     return <div>Unit not found</div>;
@@ -89,6 +122,23 @@ export default function UnitDetailPage() {
   const handleConfirmPurchase = () => {
     // This will be called by the confirmation dialog
     // The success toast and redirect will be handled by onSuccess
+  };
+
+  const handleOnrampRequest = (amount: number, onComplete: () => void) => {
+    setOnrampAmount(amount);
+    setOnOnrampComplete(() => onComplete);
+    setShowConfirmDialog(false);
+    setShowOnramp(true);
+  };
+
+  const handleOnrampSuccess = async () => {
+    await refreshBalances();
+    setShowOnramp(false);
+    if (onOnrampComplete) {
+      setShowConfirmDialog(true);
+      onOnrampComplete();
+      setOnOnrampComplete(null);
+    }
   };
 
   const handlePurchaseSuccess = () => {
@@ -580,14 +630,36 @@ export default function UnitDetailPage() {
         open={showConfirmDialog}
         onOpenChange={setShowConfirmDialog}
         hotelName={hotel.name}
+        hotelId={hotel.id}
         unitName={unit.name}
+        unitId={unit.id}
         unitType={unit.type}
         tokenAmount={purchaseAmount}
+        maxTokenAmount={unit.availableTokens}
+        onTokenAmountChange={setPurchaseAmount}
         tokenPrice={tokenPrice}
         totalPrice={purchaseTotal}
         roiPercentage={hotel.roiPercentage}
+        rlusdBalance={rlusdBalance}
+        userAddress={address}
+        walletSeed={walletSeed}
+        issuerAddress={issuerAddress}
+        hasRlusdTrustLine={hasRlusdTrustLine}
+        refreshBalances={refreshBalances}
+        onOnrampRequest={handleOnrampRequest}
         onConfirm={handleConfirmPurchase}
         onSuccess={handlePurchaseSuccess}
+      />
+
+      <OnrampDialog
+        open={showOnramp}
+        onOpenChange={setShowOnramp}
+        userAddress={address ?? ''}
+        initialAmount={onrampAmount}
+        minimumAmount={onrampAmount}
+        onSuccess={() => {
+          void handleOnrampSuccess();
+        }}
       />
     </div>
   );

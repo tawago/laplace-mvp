@@ -12,57 +12,61 @@ import {
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRight,
   Shield,
   Copy,
-  ChevronRight
+  Landmark
 } from 'lucide-react';
 import { TokenPurchase } from '@/types/hotel';
 import { useAuth } from '@/contexts/auth-context';
+import { useWallet } from '@/contexts/wallet-context';
 import { toast } from 'sonner';
 import { AuthGuard } from '@/components/auth-guard';
 
+interface PortfolioHolding extends TokenPurchase {
+  currentValue: number;
+}
+
 export default function PortfolioPage() {
-  const [portfolio, setPortfolio] = useState<TokenPurchase[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioHolding[]>([]);
   const { user } = useAuth();
+  const { address } = useWallet();
   
   useEffect(() => {
-    // Mock portfolio data - in real app, this would come from blockchain/API
-    const mockPurchases: TokenPurchase[] = [
-      {
-        id: '1',
-        hotelId: 'the-sail',
-        hotelName: 'THE SAIL Hotel Tower',
-        unitId: 'sail-a',
-        unitType: 'Studio Deluxe',
-        tokenAmount: 50,
-        pricePerToken: 100,
-        totalPrice: 5000,
-        purchaseDate: new Date('2024-01-15'),
-        estimatedROI: 8,
-        status: 'confirmed'
-      },
-      {
-        id: '2',
-        hotelId: 'nyra',
-        hotelName: 'NYRA Oceanview Hotel',
-        unitId: 'nyra-b',
-        unitType: 'Premium Suite',
-        tokenAmount: 100,
-        pricePerToken: 100,
-        totalPrice: 10000,
-        purchaseDate: new Date('2024-02-20'),
-        estimatedROI: 8,
-        status: 'confirmed'
+    const activeAddress = address ?? user?.wallet.address;
+    if (!activeAddress) {
+      setPortfolio([]);
+      return;
+    }
+
+    const loadPortfolio = async () => {
+      try {
+        const response = await fetch(`/api/portfolio?address=${activeAddress}`);
+        const payload = await response.json();
+
+        if (!response.ok || !payload?.success || !Array.isArray(payload.data)) {
+          throw new Error(payload?.error ?? 'Failed to load portfolio');
+        }
+
+        const next = payload.data.map((entry: PortfolioHolding & { purchaseDate: string }) => ({
+          ...entry,
+          purchaseDate: new Date(entry.purchaseDate),
+        }));
+        setPortfolio(next);
+      } catch {
+        setPortfolio([]);
       }
-    ];
-    
-    setPortfolio(mockPurchases);
-  }, []);
+    };
+
+    void loadPortfolio();
+  }, [address, user?.wallet.address]);
 
   const totalInvested = portfolio.reduce((sum, p) => sum + p.totalPrice, 0);
   const totalTokens = portfolio.reduce((sum, p) => sum + p.tokenAmount, 0);
   const estimatedAnnualReturn = portfolio.reduce((sum, p) => sum + (p.totalPrice * p.estimatedROI / 100), 0);
-  const currentValue = totalInvested * 1.05; // Mock 5% appreciation
+  const currentValue = portfolio.reduce((sum, holding) => sum + holding.currentValue, 0);
+  const totalGain = currentValue - totalInvested;
+  const totalGainPercentage = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
 
   const copyAddress = () => {
     if (user) {
@@ -139,9 +143,20 @@ export default function PortfolioPage() {
                 <div>
                   <p className="text-sm text-zinc-600 dark:text-zinc-400">Current Value</p>
                   <p className="mt-1 text-2xl font-bold">${currentValue.toLocaleString()}</p>
-                  <p className="mt-1 flex items-center text-xs text-emerald-600">
-                    <ArrowUpRight className="mr-1 h-3 w-3" />
-                    +5.0%
+                  <p
+                    className={`mt-1 flex items-center text-xs ${
+                      totalGain > 0 ? 'text-emerald-600' : totalGain < 0 ? 'text-red-600' : 'text-zinc-500'
+                    }`}
+                  >
+                    {totalGain > 0 ? (
+                      <ArrowUpRight className="mr-1 h-3 w-3" />
+                    ) : totalGain < 0 ? (
+                      <ArrowDownRight className="mr-1 h-3 w-3" />
+                    ) : (
+                      <ArrowRight className="mr-1 h-3 w-3" />
+                    )}
+                    {totalGain > 0 ? '+' : ''}
+                    {totalGainPercentage.toFixed(1)}%
                   </p>
                 </div>
                 <div className="rounded-lg bg-emerald-100 p-3 dark:bg-emerald-900/20">
@@ -202,8 +217,7 @@ export default function PortfolioPage() {
                 </thead>
                 <tbody className="divide-y">
                   {portfolio.map((purchase) => {
-                    const currentValue = purchase.totalPrice * 1.05; // Mock appreciation
-                    const gain = currentValue - purchase.totalPrice;
+                    const gain = purchase.currentValue - purchase.totalPrice;
                     const gainPercentage = (gain / purchase.totalPrice) * 100;
                     
                     return (
@@ -226,18 +240,28 @@ export default function PortfolioPage() {
                         <td className="py-4">${purchase.totalPrice.toLocaleString()}</td>
                         <td className="py-4">
                           <div>
-                            <p className="font-medium">${currentValue.toFixed(0)}</p>
-                            <p className={`flex items-center text-xs ${gain > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {gain > 0 ? <ArrowUpRight className="mr-1 h-3 w-3" /> : <ArrowDownRight className="mr-1 h-3 w-3" />}
+                            <p className="font-medium">${purchase.currentValue.toFixed(0)}</p>
+                            <p
+                              className={`flex items-center text-xs ${
+                                gain > 0 ? 'text-emerald-600' : gain < 0 ? 'text-red-600' : 'text-zinc-500'
+                              }`}
+                            >
+                              {gain > 0 ? (
+                                <ArrowUpRight className="mr-1 h-3 w-3" />
+                              ) : gain < 0 ? (
+                                <ArrowDownRight className="mr-1 h-3 w-3" />
+                              ) : (
+                                <ArrowRight className="mr-1 h-3 w-3" />
+                              )}
                               {gain > 0 ? '+' : ''}{gainPercentage.toFixed(1)}%
                             </p>
                           </div>
                         </td>
                         <td className="py-4">
-                          <Link href={`/portfolio/${purchase.id}`}>
+                          <Link href={`/borrow?hotelId=${purchase.hotelId}&unitId=${purchase.unitId}`}>
                             <Button variant="ghost" size="sm">
-                              View Details
-                              <ChevronRight className="ml-1 h-4 w-4" />
+                              <Landmark className="mr-1 h-4 w-4" />
+                              Get Loan
                             </Button>
                           </Link>
                         </td>

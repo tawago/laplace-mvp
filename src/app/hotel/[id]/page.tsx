@@ -1,16 +1,18 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { ImageGallery } from '@/components/image-gallery';
 import { HotelImage } from '@/components/hotel-image';
 import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
+import { OnrampDialog } from '@/components/onramp-dialog';
 import { TokenHolderBenefits } from '@/components/token-holder-benefits';
 import { useAuth } from '@/contexts/auth-context';
+import { useWallet } from '@/contexts/wallet-context';
 import { LoginDialog } from '@/components/login-dialog';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -19,27 +21,54 @@ import {
   Shield, 
   Calendar,
   DollarSign,
-  Home,
-  Maximize,
-  Eye,
   Check,
   Info
 } from 'lucide-react';
 import Link from 'next/link';
 import { hotels } from '@/data/hotels';
 import { HotelUnit } from '@/types/hotel';
+import { loadWalletSeed } from '@/lib/client/wallet-storage';
 
 export default function HotelPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { address, rlusdBalance, hasRlusdTrustLine, refreshBalances } = useWallet();
   const hotel = hotels.find(h => h.id === params.id);
   
   const [selectedUnit, setSelectedUnit] = useState<HotelUnit | null>(null);
   const [tokenAmount, setTokenAmount] = useState(100);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showOnramp, setShowOnramp] = useState(false);
+  const [onrampAmount, setOnrampAmount] = useState(0);
+  const [onOnrampComplete, setOnOnrampComplete] = useState<(() => void) | null>(null);
+  const [walletSeed, setWalletSeed] = useState<string | null>(null);
+  const [issuerAddress, setIssuerAddress] = useState('');
+
+  useEffect(() => {
+    setWalletSeed(loadWalletSeed());
+
+    const loadConfig = async () => {
+      try {
+        const response = await fetch('/api/lending/config');
+        const payload = await response.json();
+        if (payload.success && typeof payload.data?.issuerAddress === 'string') {
+          setIssuerAddress(payload.data.issuerAddress);
+        }
+      } catch {
+        setIssuerAddress('');
+      }
+    };
+
+    void loadConfig();
+  }, []);
+
+  useEffect(() => {
+    if (showConfirmDialog) {
+      setWalletSeed(loadWalletSeed());
+    }
+  }, [address, showConfirmDialog]);
 
   if (!hotel) {
     return <div>Hotel not found</div>;
@@ -48,23 +77,34 @@ export default function HotelPage() {
   const handleUnitSelect = (unit: HotelUnit) => {
     setSelectedUnit(unit);
     setTokenAmount(100);
-    setIsSheetOpen(true);
-  };
-
-  const handleCheckout = () => {
     if (!user) {
-      setIsSheetOpen(false);
       setShowLoginDialog(true);
       return;
     }
-    
-    setIsSheetOpen(false);
+
     setShowConfirmDialog(true);
   };
 
   const handleConfirmPurchase = () => {
     // This will be called by the confirmation dialog
     // The old checkout dialog is no longer needed
+  };
+
+  const handleOnrampRequest = (amount: number, onComplete: () => void) => {
+    setOnrampAmount(amount);
+    setOnOnrampComplete(() => onComplete);
+    setShowConfirmDialog(false);
+    setShowOnramp(true);
+  };
+
+  const handleOnrampSuccess = async () => {
+    await refreshBalances();
+    setShowOnramp(false);
+    if (onOnrampComplete) {
+      setShowConfirmDialog(true);
+      onOnrampComplete();
+      setOnOnrampComplete(null);
+    }
   };
 
   const handlePurchaseSuccess = () => {
@@ -302,86 +342,6 @@ export default function HotelPage() {
         </Tabs>
       </div>
 
-      {/* Unit Purchase Sheet */}
-      <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-        <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-md">
-          <div className="p-6">
-            <SheetHeader className="mb-6">
-              <SheetTitle>Purchase Tokens</SheetTitle>
-              <SheetDescription>
-                Select the number of tokens you want to purchase
-              </SheetDescription>
-            </SheetHeader>
-          
-          {selectedUnit && (
-            <div className="space-y-6">
-              <div className="rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800">
-                <h3 className="font-semibold">{selectedUnit.name}</h3>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div className="flex items-center gap-1">
-                    <Home className="h-4 w-4 text-zinc-500" />
-                    <span>Type {selectedUnit.type}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Maximize className="h-4 w-4 text-zinc-500" />
-                    <span>{selectedUnit.size} {selectedUnit.sizeUnit}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Eye className="h-4 w-4 text-zinc-500" />
-                    <span>{selectedUnit.view}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <DollarSign className="h-4 w-4 text-zinc-500" />
-                    <span>${selectedUnit.totalPrice.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Number of Tokens
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max={selectedUnit.availableTokens}
-                  value={tokenAmount}
-                  onChange={(e) => setTokenAmount(parseInt(e.target.value) || 0)}
-                  className="w-full rounded-md border bg-white px-3 py-2 dark:bg-zinc-950"
-                />
-                <p className="mt-1 text-xs text-zinc-500">
-                  Max: {selectedUnit.availableTokens.toLocaleString()} tokens
-                </p>
-              </div>
-
-              <div className="space-y-2 border-t pt-4">
-                <div className="flex justify-between text-sm">
-                  <span>Token Price</span>
-                  <span>${hotel.tokenPrice}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Quantity</span>
-                  <span>{tokenAmount}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2 font-semibold">
-                  <span>Total</span>
-                  <span>${subtotal.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <Button 
-                className="w-full" 
-                onClick={handleCheckout}
-                disabled={tokenAmount < 1 || tokenAmount > selectedUnit.availableTokens}
-              >
-                Proceed to Checkout
-              </Button>
-            </div>
-          )}
-          </div>
-        </SheetContent>
-      </Sheet>
-
       {/* Login Dialog */}
       <LoginDialog open={showLoginDialog} onOpenChange={setShowLoginDialog} />
 
@@ -391,16 +351,38 @@ export default function HotelPage() {
           open={showConfirmDialog}
           onOpenChange={setShowConfirmDialog}
           hotelName={hotel.name}
+          hotelId={hotel.id}
           unitName={selectedUnit.name}
+          unitId={selectedUnit.id}
           unitType={selectedUnit.type}
           tokenAmount={tokenAmount}
+          maxTokenAmount={selectedUnit.availableTokens}
+          onTokenAmountChange={setTokenAmount}
           tokenPrice={hotel.tokenPrice}
           totalPrice={subtotal}
           roiPercentage={hotel.roiPercentage}
+          rlusdBalance={rlusdBalance}
+          userAddress={address}
+          walletSeed={walletSeed}
+          issuerAddress={issuerAddress}
+          hasRlusdTrustLine={hasRlusdTrustLine}
+          refreshBalances={refreshBalances}
+          onOnrampRequest={handleOnrampRequest}
           onConfirm={handleConfirmPurchase}
           onSuccess={handlePurchaseSuccess}
         />
       )}
+
+      <OnrampDialog
+        open={showOnramp}
+        onOpenChange={setShowOnramp}
+        userAddress={address ?? ''}
+        initialAmount={onrampAmount}
+        minimumAmount={onrampAmount}
+        onSuccess={() => {
+          void handleOnrampSuccess();
+        }}
+      />
     </div>
   );
 }
