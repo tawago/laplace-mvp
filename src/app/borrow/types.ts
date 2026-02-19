@@ -66,4 +66,14 @@ export interface BorrowerEvent {
   errorMessage: string | null;
 }
 
+export interface AmortizationDataPoint {
+  period: number;
+  monthLabel: string;
+  principalPaid: number;
+  interestPaid: number;
+  cumulativePrincipal: number;
+  cumulativeInterest: number;
+  remainingBalance: number;
+}
+
 export type RepayKind = 'regular' | 'full' | 'overpayment' | 'late';

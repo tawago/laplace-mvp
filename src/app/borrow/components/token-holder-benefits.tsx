@@ -155,7 +155,7 @@ export function TokenHolderBenefits({ selectedMarketName, explorerUrl, walletBal
   const distributionChartConfig = {
     distribution: {
       label: 'Distribution',
-      color: '#10b981',
+      color: 'var(--chart-2)',
     },
   } satisfies ChartConfig;
 
