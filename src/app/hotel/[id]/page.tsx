@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { ImageGallery } from '@/components/image-gallery';
 import { HotelImage } from '@/components/hotel-image';
 import { PurchaseConfirmationDialog } from '@/components/purchase-confirmation-dialog';
@@ -22,9 +21,6 @@ import {
   Shield, 
   Calendar,
   DollarSign,
-  Home,
-  Maximize,
-  Eye,
   Check,
   Info
 } from 'lucide-react';
@@ -42,7 +38,6 @@ export default function HotelPage() {
   
   const [selectedUnit, setSelectedUnit] = useState<HotelUnit | null>(null);
   const [tokenAmount, setTokenAmount] = useState(100);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showOnramp, setShowOnramp] = useState(false);
@@ -82,17 +77,11 @@ export default function HotelPage() {
   const handleUnitSelect = (unit: HotelUnit) => {
     setSelectedUnit(unit);
     setTokenAmount(100);
-    setIsSheetOpen(true);
-  };
-
-  const handleCheckout = () => {
     if (!user) {
-      setIsSheetOpen(false);
       setShowLoginDialog(true);
       return;
     }
-    
-    setIsSheetOpen(false);
+
     setShowConfirmDialog(true);
   };
 
@@ -363,86 +352,6 @@ export default function HotelPage() {
         </Tabs>
       </div>
 
-      {/* Unit Purchase Sheet */}
-      <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-        <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-md">
-          <div className="p-6">
-            <SheetHeader className="mb-6">
-              <SheetTitle>Purchase Tokens</SheetTitle>
-              <SheetDescription>
-                Select the number of tokens you want to purchase
-              </SheetDescription>
-            </SheetHeader>
-          
-          {selectedUnit && (
-            <div className="space-y-6">
-              <div className="rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800">
-                <h3 className="font-semibold">{selectedUnit.name}</h3>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div className="flex items-center gap-1">
-                    <Home className="h-4 w-4 text-zinc-500" />
-                    <span>Type {selectedUnit.type}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Maximize className="h-4 w-4 text-zinc-500" />
-                    <span>{selectedUnit.size} {selectedUnit.sizeUnit}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Eye className="h-4 w-4 text-zinc-500" />
-                    <span>{selectedUnit.view}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <DollarSign className="h-4 w-4 text-zinc-500" />
-                    <span>${selectedUnit.totalPrice.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Number of Tokens
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max={selectedUnit.availableTokens}
-                  value={tokenAmount}
-                  onChange={(e) => setTokenAmount(parseInt(e.target.value) || 0)}
-                  className="w-full rounded-md border bg-white px-3 py-2 dark:bg-zinc-950"
-                />
-                <p className="mt-1 text-xs text-zinc-500">
-                  Max: {selectedUnit.availableTokens.toLocaleString()} tokens
-                </p>
-              </div>
-
-              <div className="space-y-2 border-t pt-4">
-                <div className="flex justify-between text-sm">
-                  <span>Token Price</span>
-                  <span>${hotel.tokenPrice}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Quantity</span>
-                  <span>{tokenAmount}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2 font-semibold">
-                  <span>Total</span>
-                  <span>${subtotal.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <Button 
-                className="w-full" 
-                onClick={handleCheckout}
-                disabled={tokenAmount < 1 || tokenAmount > selectedUnit.availableTokens}
-              >
-                Proceed to Checkout
-              </Button>
-            </div>
-          )}
-          </div>
-        </SheetContent>
-      </Sheet>
-
       {/* Login Dialog */}
       <LoginDialog open={showLoginDialog} onOpenChange={setShowLoginDialog} />
 
@@ -457,6 +366,8 @@ export default function HotelPage() {
           unitId={selectedUnit.id}
           unitType={selectedUnit.type}
           tokenAmount={tokenAmount}
+          maxTokenAmount={selectedUnit.availableTokens}
+          onTokenAmountChange={setTokenAmount}
           tokenPrice={hotel.tokenPrice}
           totalPrice={subtotal}
           roiPercentage={hotel.roiPercentage}

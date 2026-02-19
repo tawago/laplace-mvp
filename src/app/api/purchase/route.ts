@@ -22,6 +22,8 @@ type PurchaseStatus =
   | 'FAILED'
   | 'CANCELLED';
 
+type PaymentMethod = 'wallet' | 'card' | 'wire';
+
 function parsePositiveNumber(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -32,6 +34,11 @@ function parsePositiveNumber(value: unknown): number | null {
 
 function isLikelyXrplAddress(address: unknown): address is string {
   return typeof address === 'string' && address.startsWith('r') && address.length >= 25;
+}
+
+function parsePaymentMethod(value: unknown): PaymentMethod {
+  if (value === 'card' || value === 'wire') return value;
+  return 'wallet';
 }
 
 function toErrorResponse(code: string, message: string, status: number) {
@@ -48,8 +55,8 @@ async function updateOrderStatus(
   orderId: string,
   status: PurchaseStatus,
   extra?: {
-    paymentTxHash?: string;
-    tokenTxHash?: string;
+    paymentTxHash?: string | null;
+    tokenTxHash?: string | null;
     errorCode?: string;
     errorMessage?: string;
     completedAt?: Date;
@@ -59,8 +66,8 @@ async function updateOrderStatus(
     .update(purchaseOrders)
     .set({
       status,
-      paymentTxHash: extra?.paymentTxHash,
-      tokenTxHash: extra?.tokenTxHash,
+      paymentTxHash: extra?.paymentTxHash ?? null,
+      tokenTxHash: extra?.tokenTxHash ?? null,
       errorCode: extra?.errorCode ?? null,
       errorMessage: extra?.errorMessage ?? null,
       completedAt: extra?.completedAt ?? null,
@@ -74,6 +81,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const userAddress = body?.userAddress;
     const walletSeed = body?.walletSeed;
+    const paymentMethod = parsePaymentMethod(body?.paymentMethod);
     const hotelId = typeof body?.hotelId === 'string' ? body.hotelId : '';
     const unitId = typeof body?.unitId === 'string' ? body.unitId : '';
     const tokenAmount = parsePositiveNumber(body?.tokenAmount);
@@ -86,9 +94,6 @@ export async function POST(request: NextRequest) {
 
     if (!isLikelyXrplAddress(userAddress)) {
       return toErrorResponse('INVALID_USER_ADDRESS', 'Invalid or missing userAddress', 400);
-    }
-    if (typeof walletSeed !== 'string' || walletSeed.length < 10) {
-      return toErrorResponse('INVALID_WALLET_SEED', 'Invalid or missing walletSeed', 400);
     }
     if (!hotelId || !unitId) {
       return toErrorResponse('INVALID_PURCHASE_TARGET', 'hotelId and unitId are required', 400);
@@ -115,21 +120,28 @@ export async function POST(request: NextRequest) {
       return toErrorResponse('UNSUPPORTED_HOTEL', `Unsupported hotelId: ${hotelId}`, 400);
     }
 
-    const userWallet = Wallet.fromSeed(walletSeed);
-    if (userWallet.address !== userAddress) {
-      return toErrorResponse('ADDRESS_SEED_MISMATCH', 'walletSeed does not match userAddress', 400);
-    }
-
     const issuerAddress = getIssuerAddress();
     const issuerWallet = getIssuerWallet();
-    const paymentCurrency = TOKEN_CODE_BY_SYMBOL.RLUSD;
+    const paymentCurrency = paymentMethod === 'wallet' ? TOKEN_CODE_BY_SYMBOL.RLUSD : paymentMethod.toUpperCase();
+    const paymentIssuer = paymentMethod === 'wallet' ? issuerAddress : 'OFFCHAIN';
     const rwaCurrency = TOKEN_CODE_BY_SYMBOL[rwaSymbol];
+
+    let userWallet: Wallet | null = null;
+    if (paymentMethod === 'wallet') {
+      if (typeof walletSeed !== 'string' || walletSeed.length < 10) {
+        return toErrorResponse('INVALID_WALLET_SEED', 'Invalid or missing walletSeed', 400);
+      }
+      userWallet = Wallet.fromSeed(walletSeed);
+      if (userWallet.address !== userAddress) {
+        return toErrorResponse('ADDRESS_SEED_MISMATCH', 'walletSeed does not match userAddress', 400);
+      }
+    }
 
     const [insertedOrder] = await db
       .insert(purchaseOrders)
       .values({
         idempotencyKey,
-        status: 'PAYMENT_PENDING',
+        status: paymentMethod === 'wallet' ? 'PAYMENT_PENDING' : 'PAYMENT_CONFIRMED',
         userAddress,
         hotelId,
         unitId,
@@ -137,7 +149,7 @@ export async function POST(request: NextRequest) {
         rwaCurrency,
         rwaIssuer: issuerAddress,
         paymentCurrency,
-        paymentIssuer: issuerAddress,
+        paymentIssuer,
         tokenAmount: tokenAmount.toString(),
         pricePerTokenUsd: pricePerTokenUsd.toString(),
         totalPaymentAmount: totalPaymentAmount.toString(),
@@ -182,23 +194,7 @@ export async function POST(request: NextRequest) {
 
     const client = await getClient();
 
-    const [hasPaymentTrustline, hasRwaTrustline] = await Promise.all([
-      hasTrustLine(client, userAddress, issuerAddress, paymentCurrency),
-      hasTrustLine(client, userAddress, issuerAddress, rwaCurrency),
-    ]);
-
-    if (!hasPaymentTrustline) {
-      await updateOrderStatus(order.id, 'FAILED', {
-        errorCode: 'MISSING_PAYMENT_TRUSTLINE',
-        errorMessage: 'RLUSD trust line is required before purchase',
-      });
-      return toErrorResponse(
-        'MISSING_PAYMENT_TRUSTLINE',
-        'RLUSD trust line is required before purchase',
-        400
-      );
-    }
-
+    const hasRwaTrustline = await hasTrustLine(client, userAddress, issuerAddress, rwaCurrency);
     if (!hasRwaTrustline) {
       await updateOrderStatus(order.id, 'FAILED', {
         errorCode: 'MISSING_RWA_TRUSTLINE',
@@ -211,43 +207,58 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const paymentTx = await sendToken(
-      client,
-      userWallet,
-      issuerAddress,
-      paymentCurrency,
-      totalPaymentAmount.toString(),
-      issuerAddress
-    );
+    let paymentTxHash: string | null = null;
+    if (paymentMethod === 'wallet') {
+      const hasPaymentTrustline = await hasTrustLine(client, userAddress, issuerAddress, TOKEN_CODE_BY_SYMBOL.RLUSD);
+      if (!hasPaymentTrustline) {
+        await updateOrderStatus(order.id, 'FAILED', {
+          errorCode: 'MISSING_PAYMENT_TRUSTLINE',
+          errorMessage: 'RLUSD trust line is required before purchase',
+        });
+        return toErrorResponse(
+          'MISSING_PAYMENT_TRUSTLINE',
+          'RLUSD trust line is required before purchase',
+          400
+        );
+      }
 
-    if (paymentTx.result !== 'tesSUCCESS') {
-      await updateOrderStatus(order.id, 'FAILED', {
-        errorCode: 'PAYMENT_TX_FAILED',
-        errorMessage: `Payment leg failed: ${paymentTx.result}`,
-      });
-      return toErrorResponse('PAYMENT_TX_FAILED', `Payment leg failed: ${paymentTx.result}`, 502);
+      const paymentTx = await sendToken(
+        client,
+        userWallet as Wallet,
+        issuerAddress,
+        TOKEN_CODE_BY_SYMBOL.RLUSD,
+        totalPaymentAmount.toString(),
+        issuerAddress
+      );
+
+      if (paymentTx.result !== 'tesSUCCESS') {
+        await updateOrderStatus(order.id, 'FAILED', {
+          errorCode: 'PAYMENT_TX_FAILED',
+          errorMessage: `Payment leg failed: ${paymentTx.result}`,
+        });
+        return toErrorResponse('PAYMENT_TX_FAILED', `Payment leg failed: ${paymentTx.result}`, 502);
+      }
+
+      paymentTxHash = paymentTx.hash;
+      await db
+        .insert(onchainTransactions)
+        .values({
+          txHash: paymentTx.hash,
+          validated: true,
+          txResult: paymentTx.result,
+          txType: paymentTx.transactionType ?? 'Payment',
+          sourceAddress: userAddress,
+          destinationAddress: issuerAddress,
+          currency: TOKEN_CODE_BY_SYMBOL.RLUSD,
+          issuer: issuerAddress,
+          amount: totalPaymentAmount.toString(),
+          rawTxJson: paymentTx.rawTx ?? {},
+          rawMetaJson: paymentTx.rawMeta ?? null,
+        })
+        .onConflictDoNothing({ target: onchainTransactions.txHash });
     }
 
-    await db
-      .insert(onchainTransactions)
-      .values({
-        txHash: paymentTx.hash,
-        validated: true,
-        txResult: paymentTx.result,
-        txType: paymentTx.transactionType ?? 'Payment',
-        sourceAddress: userAddress,
-        destinationAddress: issuerAddress,
-        currency: paymentCurrency,
-        issuer: issuerAddress,
-        amount: totalPaymentAmount.toString(),
-        rawTxJson: paymentTx.rawTx ?? {},
-        rawMetaJson: paymentTx.rawMeta ?? null,
-      })
-      .onConflictDoNothing({ target: onchainTransactions.txHash });
-
-    await updateOrderStatus(order.id, 'TOKEN_PENDING', {
-      paymentTxHash: paymentTx.hash,
-    });
+    await updateOrderStatus(order.id, 'TOKEN_PENDING', { paymentTxHash });
 
     const tokenTx = await sendToken(
       client,
@@ -260,7 +271,7 @@ export async function POST(request: NextRequest) {
 
     if (tokenTx.result !== 'tesSUCCESS') {
       await updateOrderStatus(order.id, 'FAILED', {
-        paymentTxHash: paymentTx.hash,
+        paymentTxHash,
         errorCode: 'TOKEN_TX_FAILED',
         errorMessage: `Token leg failed: ${tokenTx.result}`,
       });
@@ -285,7 +296,7 @@ export async function POST(request: NextRequest) {
       .onConflictDoNothing({ target: onchainTransactions.txHash });
 
     await updateOrderStatus(order.id, 'COMPLETED', {
-      paymentTxHash: paymentTx.hash,
+      paymentTxHash,
       tokenTxHash: tokenTx.hash,
       completedAt: new Date(),
     });
@@ -296,7 +307,8 @@ export async function POST(request: NextRequest) {
         orderId: order.id,
         idempotencyKey,
         status: 'COMPLETED',
-        paymentTxHash: paymentTx.hash,
+        paymentMethod,
+        paymentTxHash,
         tokenTxHash: tokenTx.hash,
         rwaSymbol,
         rwaAmount: tokenAmount,

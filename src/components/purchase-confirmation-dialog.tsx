@@ -13,9 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, CheckCircle, Home, Loader2, Shield, TrendingUp, Wallet } from 'lucide-react';
+import { AlertCircle, Building2, CheckCircle, CreditCard, Home, Loader2, Shield, TrendingUp, Wallet } from 'lucide-react';
 
 type Status = 'payment-select' | 'processing' | 'success' | 'error';
+type PaymentMethod = 'wallet' | 'card' | 'wire';
 
 interface PurchaseConfirmationDialogProps {
   open: boolean;
@@ -26,6 +27,8 @@ interface PurchaseConfirmationDialogProps {
   unitId: string;
   unitType: string;
   tokenAmount: number;
+  maxTokenAmount: number;
+  onTokenAmountChange: (nextAmount: number) => void;
   tokenPrice: number;
   totalPrice: number;
   roiPercentage: number;
@@ -40,10 +43,17 @@ interface PurchaseConfirmationDialogProps {
   onSuccess?: () => void;
 }
 
-const processingSteps = [
+const walletProcessingSteps = [
   'Checking wallet and balance...',
   'Submitting RLUSD payment...',
   'Confirming transaction...',
+  'Finalizing purchase...',
+];
+
+const directProcessingSteps = [
+  'Verifying payment session...',
+  'Confirming payment method...',
+  'Issuing RWA tokens...',
   'Finalizing purchase...',
 ];
 
@@ -56,6 +66,8 @@ export function PurchaseConfirmationDialog({
   unitId,
   unitType,
   tokenAmount,
+  maxTokenAmount,
+  onTokenAmountChange,
   tokenPrice,
   totalPrice,
   roiPercentage,
@@ -74,10 +86,12 @@ export function PurchaseConfirmationDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [tokenTxHash, setTokenTxHash] = useState<string | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('wallet');
 
   const annualReturn = useMemo(() => (totalPrice * roiPercentage) / 100, [roiPercentage, totalPrice]);
   const deficit = Math.max(0, totalPrice - rlusdBalance);
   const canPayFromWallet = rlusdBalance >= totalPrice;
+  const activeProcessingSteps = selectedPaymentMethod === 'wallet' ? walletProcessingSteps : directProcessingSteps;
 
   const resetState = () => {
     setStatus('payment-select');
@@ -93,8 +107,11 @@ export function PurchaseConfirmationDialog({
       setErrorMessage(null);
       setTxHash(null);
       setTokenTxHash(null);
+      setSelectedPaymentMethod('wallet');
     }
   }, [open]);
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const handleWalletPayment = async () => {
     if (!userAddress) {
@@ -144,6 +161,7 @@ export function PurchaseConfirmationDialog({
           tokenAmount,
           pricePerToken: tokenPrice,
           totalPrice,
+          paymentMethod: 'wallet',
           idempotencyKey: crypto.randomUUID(),
         }),
       });
@@ -162,6 +180,56 @@ export function PurchaseConfirmationDialog({
     } catch (error) {
       setStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Failed to complete purchase payment.');
+    }
+  };
+
+  const handleDirectPayment = async (method: 'card' | 'wire') => {
+    if (!userAddress) {
+      setStatus('error');
+      setErrorMessage('Wallet is disconnected. Connect your wallet before purchasing tokens.');
+      return;
+    }
+
+    setStatus('processing');
+    setErrorMessage(null);
+    setProcessingStep(0);
+
+    try {
+      await sleep(300);
+      setProcessingStep(1);
+      await sleep(300);
+      setProcessingStep(2);
+
+      const response = await fetch('/api/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userAddress,
+          hotelId,
+          unitId,
+          tokenAmount,
+          pricePerToken: tokenPrice,
+          totalPrice,
+          paymentMethod: method,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error?.message ?? payload?.error ?? 'Purchase API call failed');
+      }
+
+      setTxHash(typeof payload.data?.paymentTxHash === 'string' ? payload.data.paymentTxHash : null);
+      setTokenTxHash(typeof payload.data?.tokenTxHash === 'string' ? payload.data.tokenTxHash : null);
+      setProcessingStep(3);
+      await sleep(300);
+      await refreshBalances();
+      onConfirm();
+      setStatus('success');
+    } catch (error) {
+      setStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to complete direct purchase.');
     }
   };
 
@@ -202,7 +270,7 @@ export function PurchaseConfirmationDialog({
                     <Home className="h-4 w-4 text-zinc-500" />
                     <span className="text-sm text-zinc-600 dark:text-zinc-400">Property</span>
                   </div>
-                  <div>
+                  <div className="flex items-center justify-between">
                     <p className="font-semibold">{hotelName}</p>
                     <p className="text-sm text-zinc-600 dark:text-zinc-400">
                       {unitName} - Type {unitType}
@@ -214,11 +282,47 @@ export function PurchaseConfirmationDialog({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-zinc-600 dark:text-zinc-400">Number of Tokens</span>
-                  <span className="font-medium">{tokenAmount.toLocaleString()}</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => onTokenAmountChange(Math.max(1, tokenAmount - 1))}
+                      disabled={tokenAmount <= 1}
+                    >
+                      -
+                    </Button>
+                    <input
+                      type="number"
+                      min="1"
+                      max={maxTokenAmount}
+                      value={tokenAmount}
+                      onChange={(event) => {
+                        const parsed = Number.parseInt(event.target.value, 10);
+                        if (!Number.isFinite(parsed)) {
+                          onTokenAmountChange(0);
+                          return;
+                        }
+                        onTokenAmountChange(Math.min(maxTokenAmount, Math.max(0, parsed)));
+                      }}
+                      className="w-12 border-0 bg-transparent p-0 text-right font-semibold focus-visible:ring-0"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => onTokenAmountChange(Math.min(maxTokenAmount, tokenAmount + 1))}
+                      disabled={tokenAmount >= maxTokenAmount}
+                    >
+                      +
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-zinc-600 dark:text-zinc-400">Price per Token</span>
-                  <span className="font-medium">${tokenPrice}</span>
+                  <span className="font-medium mr-5">${tokenPrice}</span>
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
@@ -226,16 +330,17 @@ export function PurchaseConfirmationDialog({
                   <span className="text-xl font-bold">${totalPrice.toLocaleString()}</span>
                 </div>
               </div>
-
-              <Alert className="border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/20">
-                <TrendingUp className="h-4 w-4 text-emerald-600" />
-                <AlertDescription className="text-emerald-900 dark:text-emerald-100">
-                  Expected annual return: ${annualReturn.toLocaleString()} ({roiPercentage}%)
-                </AlertDescription>
-              </Alert>
+              <Separator />
 
               <div className="grid gap-3">
-                <Card className={`p-4 ${canPayFromWallet ? 'border-blue-200' : 'border-zinc-200 opacity-80'}`}>
+                <Card
+                  className={`cursor-pointer p-4 transition-colors ${
+                    selectedPaymentMethod === 'wallet'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
+                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-900'
+                  }`}
+                  onClick={() => setSelectedPaymentMethod('wallet')}
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="font-medium">From Wallet</p>
@@ -253,24 +358,41 @@ export function PurchaseConfirmationDialog({
                         </p>
                       ) : null}
                     </div>
-                    <Button onClick={() => void handleWalletPayment()} disabled={!canPayFromWallet || !hasRlusdTrustLine}>
-                      <Wallet className="mr-2 h-4 w-4" />
-                      Pay from Wallet
-                    </Button>
+                    <Wallet className="h-4 w-4 text-zinc-500" />
                   </div>
                 </Card>
 
-                <Card className="border-emerald-300 bg-emerald-50/70 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+                <Card
+                  className={`cursor-pointer p-4 transition-colors ${
+                    selectedPaymentMethod === 'card'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
+                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-900'
+                  }`}
+                  onClick={() => setSelectedPaymentMethod('card')}
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="font-medium">Top up & Pay</p>
-                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                        Add funds, then auto-complete this purchase.
-                      </p>
+                      <p className="font-medium">Credit / Debit Card</p>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">Pay directly and receive tokens.</p>
                     </div>
-                    <Button onClick={handleTopUp} variant="secondary">
-                      Top up
-                    </Button>
+                    <CreditCard className="h-4 w-4 text-zinc-500" />
+                  </div>
+                </Card>
+
+                <Card
+                  className={`cursor-pointer p-4 transition-colors ${
+                    selectedPaymentMethod === 'wire'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
+                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-900'
+                  }`}
+                  onClick={() => setSelectedPaymentMethod('wire')}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-medium">Bank Wire</p>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">Pay via wire and auto-issue tokens.</p>
+                    </div>
+                    <Building2 className="h-4 w-4 text-zinc-500" />
                   </div>
                 </Card>
               </div>
@@ -280,6 +402,34 @@ export function PurchaseConfirmationDialog({
               <Button variant="outline" onClick={handleCancel}>
                 Cancel
               </Button>
+              <div className="flex justify-end">
+                {selectedPaymentMethod === 'wallet' ? (
+                  canPayFromWallet ? (
+                    <Button
+                      onClick={() => void handleWalletPayment()}
+                      disabled={!hasRlusdTrustLine || tokenAmount < 1 || tokenAmount > maxTokenAmount}
+                    >
+                      <Wallet className="mr-1 h-4 w-4" />
+                      Pay from Wallet
+                    </Button>
+                  ) : (
+                    <Button onClick={handleTopUp} disabled={!hasRlusdTrustLine}>
+                      <Wallet className="mr-1 h-4 w-4" />
+                      Top up and Pay
+                    </Button>
+                  )
+                ) : selectedPaymentMethod === 'card' ? (
+                  <Button onClick={() => void handleDirectPayment('card')}>
+                    <CreditCard className="mr-1 h-4 w-4" />
+                    Pay with Card
+                  </Button>
+                ) : (
+                  <Button onClick={() => void handleDirectPayment('wire')}>
+                    <Building2 className="mr-1 h-4 w-4" />
+                    Pay with Wire
+                  </Button>
+                )}
+              </div>
             </DialogFooter>
           </>
         )}
@@ -297,7 +447,7 @@ export function PurchaseConfirmationDialog({
               </div>
 
               <div className="space-y-2">
-                {processingSteps.map((stepText, index) => (
+                {activeProcessingSteps.map((stepText, index) => (
                   <div key={stepText} className="flex items-center gap-2 text-sm">
                     {index <= processingStep ? (
                       <CheckCircle className="h-4 w-4 text-emerald-600" />

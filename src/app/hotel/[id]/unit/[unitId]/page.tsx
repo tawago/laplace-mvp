@@ -635,6 +635,8 @@ export default function UnitDetailPage() {
         unitId={unit.id}
         unitType={unit.type}
         tokenAmount={purchaseAmount}
+        maxTokenAmount={unit.availableTokens}
+        onTokenAmountChange={setPurchaseAmount}
         tokenPrice={tokenPrice}
         totalPrice={purchaseTotal}
         roiPercentage={hotel.roiPercentage}
