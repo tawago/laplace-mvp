@@ -9,6 +9,9 @@ export interface Market {
   maxLtvRatio: number;
   liquidationLtvRatio: number;
   baseInterestRate: number;
+  loanTermMonths: number;
+  totalSupplied?: number;
+  totalBorrowed?: number;
   prices: {
     collateralPriceUsd: number;
     debtPriceUsd: number;

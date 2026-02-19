@@ -5,6 +5,7 @@ import { getXrplExplorerUrl, getXrplNetwork, getXrplWsUrl } from '@/lib/config/r
 import { getClient } from '@/lib/xrpl/client';
 import { cached, xrplCacheKeys } from '@/lib/xrpl/cache';
 import { parseAccountRootFlags } from 'xrpl';
+import { DEFAULT_LOAN_TERM_MONTHS } from '@/lib/lending/constants';
 
 function isTrustLineLockingEnabled(flags: number): boolean {
   return Boolean(parseAccountRootFlags(flags).lsfAllowTrustLineLocking);
@@ -74,6 +75,7 @@ export async function GET() {
           loanBrokerAddress: market.loan_broker_address,
           vaultScale: market.vault_scale,
           reserveFactor: market.reserve_factor,
+          loanTermMonths: DEFAULT_LOAN_TERM_MONTHS,
           totalSupplied: market.total_supplied,
           totalBorrowed: market.total_borrowed,
           globalYieldIndex: market.global_yield_index,

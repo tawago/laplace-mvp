@@ -9,6 +9,7 @@ import { ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
 import { getTokenSymbol } from '@/lib/xrpl/currency-codes';
 
 import type { LoanRepaymentOverview, Market, PositionMetrics, RepayKind } from '../types';
+import { buildAmortizationSchedule } from './utils/amortization';
 
 interface MarketActionsCardProps {
   market: Market;
@@ -59,11 +60,37 @@ export function MarketActionsCard({
   onWithdraw,
   onApplyRepayPreset,
 }: MarketActionsCardProps) {
+  const resolvedLiquidity = metrics?.availableLiquidity ?? market.totalSupplied ?? 0;
+  const poolSize = Number.isFinite(resolvedLiquidity) ? resolvedLiquidity : 0;
+  const debtSymbol = getTokenSymbol(market.debtCurrency);
+  const collateralSymbol = getTokenSymbol(market.collateralCurrency);
+  const parsedDepositAmount = Number(depositAmount);
+  const safeDepositAmount = Number.isFinite(parsedDepositAmount) && parsedDepositAmount > 0 ? parsedDepositAmount : 0;
+  const parsedBorrowAmount = Number(borrowAmount);
+  const safeBorrowAmount = Number.isFinite(parsedBorrowAmount) && parsedBorrowAmount > 0 ? parsedBorrowAmount : 0;
+
+  const depositBasedBorrowCapacity = (() => {
+    if (safeDepositAmount <= 0) return 0;
+
+    if (market.prices && market.prices.collateralPriceUsd > 0 && market.prices.debtPriceUsd > 0) {
+      const collateralValueUsd = safeDepositAmount * market.prices.collateralPriceUsd;
+      return (collateralValueUsd * market.maxLtvRatio) / market.prices.debtPriceUsd;
+    }
+
+    return safeDepositAmount * market.maxLtvRatio;
+  })();
+
+  const projectedRepayment = buildAmortizationSchedule({
+    principal: safeBorrowAmount,
+    apr: market.baseInterestRate,
+    periods: market.loanTermMonths,
+  });
+
   return (
     <Card>
       <CardContent className="min-h-60">
         <div className="flex flex-col lg:flex-row justify-between">
-          <section className="flex-1 space-y-4 pl-6 pr-10">
+          <section className="flex-1 space-y-4 pr-10">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">Market</h2>
               <Badge variant="outline">{(market.baseInterestRate * 100).toFixed(2)}% APR</Badge>
@@ -86,13 +113,23 @@ export function MarketActionsCard({
                 <p className="text-xs uppercase tracking-wide text-zinc-500">Liquidation LTV</p>
                 <p className="mt-1 font-semibold">{(market.liquidationLtvRatio * 100).toFixed(0)}%</p>
               </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+                <p className="text-xs uppercase tracking-wide text-zinc-500">Liquidity Pool</p>
+                <p className="mt-1 font-semibold">
+                  {poolSize.toFixed(2)} {debtSymbol}
+                </p>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+                <p className="text-xs uppercase tracking-wide text-zinc-500">Loan Period</p>
+                <p className="mt-1 font-semibold">{market.loanTermMonths} months</p>
+              </div>
             </div>
           </section>
 
           <div className="h-px bg-zinc-300 dark:bg-zinc-700 lg:hidden" />
           <div className="hidden w-px self-stretch bg-zinc-300 dark:bg-zinc-700 lg:block" />
 
-          <section className="flex-1 pr-6 pl-10">
+          <section className="flex-1 pl-10">
             <h2 className="mb-4 text-lg font-semibold">Borrower Actions</h2>
 
             {!walletConnected ? (
@@ -112,6 +149,12 @@ export function MarketActionsCard({
                       Deposit disabled: issuer has not enabled trust line token escrow.
                     </p>
                   )}
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                    Estimated max borrow from this deposit: {depositBasedBorrowCapacity.toFixed(0)} {debtSymbol}
+                    <span className="ml-1 text-zinc-500 dark:text-zinc-500">
+                      ({safeDepositAmount.toFixed(0)} {collateralSymbol} x {(market.maxLtvRatio * 100).toFixed(0)}% max LTV)
+                    </span>
+                  </p>
                   <div className="flex flex-wrap items-center gap-3">
                     <input
                       type="number"
@@ -137,9 +180,6 @@ export function MarketActionsCard({
                 </TabsContent>
 
                 <TabsContent value="borrow" className="space-y-3">
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    Vault-backed pool liquidity: {(metrics?.availableLiquidity ?? 0).toFixed(4)} {getTokenSymbol(market.debtCurrency)}
-                  </p>
                   <p className="text-xs text-zinc-600 dark:text-zinc-400">
                     Max borrowable now: {(metrics?.maxBorrowableAmount ?? 0).toFixed(4)} {getTokenSymbol(market.debtCurrency)}
                   </p>
@@ -169,6 +209,11 @@ export function MarketActionsCard({
                       Borrow
                     </Button>
                   </div>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 flex flex-col">
+                    <span>Interest rate: {(market.baseInterestRate * 100).toFixed(2)}% APR</span>
+                    <span>Loan period: {market.loanTermMonths} months </span>
+                    <span>Estimated total repayment: {projectedRepayment.totalRepayment.toFixed(4)} {debtSymbol} </span>
+                  </p>
                 </TabsContent>
 
                 <TabsContent value="repay" className="space-y-3">
