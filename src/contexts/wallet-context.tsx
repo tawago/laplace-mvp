@@ -5,7 +5,10 @@ import {
   clearWalletConnection,
   loadWalletConnection,
   loadWalletSeed,
+  loadWalletTrustLineFlags,
   saveWalletConnection,
+  saveWalletTrustLineFlags,
+  type WalletTrustLineFlags,
 } from '@/lib/client/wallet-storage';
 import { checkTrustLine, getBalances, getWalletFromSeed, type TokenBalance } from '@/lib/client/xrpl';
 import { TOKEN_CODE_BY_SYMBOL, normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
@@ -29,6 +32,22 @@ function createDefaultTrustLineFlags(): Record<AppToken, boolean> {
     RLUSD: false,
     SAIL: false,
     NYRA: false,
+  };
+}
+
+function toWalletTrustLineFlags(flags: Record<AppToken, boolean>): WalletTrustLineFlags {
+  return {
+    RLUSD: flags.RLUSD,
+    SAIL: flags.SAIL,
+    NYRA: flags.NYRA,
+  };
+}
+
+function toStatusMap(flags: Record<AppToken, boolean>): Record<AppToken, TokenTrustLineStatus> {
+  return {
+    RLUSD: flags.RLUSD ? 'ready' : 'missing',
+    SAIL: flags.SAIL ? 'ready' : 'missing',
+    NYRA: flags.NYRA ? 'ready' : 'missing',
   };
 }
 
@@ -138,11 +157,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
         const nextFlags = Object.fromEntries(checks) as Record<AppToken, boolean>;
         setHasTrustLineByToken(nextFlags);
-        setTrustLineStatusByToken({
-          RLUSD: nextFlags.RLUSD ? 'ready' : 'missing',
-          SAIL: nextFlags.SAIL ? 'ready' : 'missing',
-          NYRA: nextFlags.NYRA ? 'ready' : 'missing',
-        });
+        setTrustLineStatusByToken(toStatusMap(nextFlags));
+        saveWalletTrustLineFlags(nextAddress, issuerAddress, toWalletTrustLineFlags(nextFlags));
         return nextFlags;
       } catch {
         setHasTrustLineByToken(createDefaultTrustLineFlags());
@@ -158,15 +174,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshBalancesForAddress = useCallback(
-    async (nextAddress: string): Promise<WalletRefreshSnapshot | null> => {
+    async (
+      nextAddress: string,
+      options?: {
+        skipTrustLineRefresh?: boolean;
+      }
+    ): Promise<WalletRefreshSnapshot | null> => {
       setIsRefreshing(true);
       setError(null);
 
       try {
-        const [nextBalances, trustlineFlags] = await Promise.all([
-          getBalances(nextAddress),
-          refreshTrustLinesForAddress(nextAddress),
-        ]);
+        const nextBalancesPromise = getBalances(nextAddress);
+        const trustlineFlagsPromise = options?.skipTrustLineRefresh
+          ? Promise.resolve(
+              issuerAddress
+                ? (loadWalletTrustLineFlags(nextAddress, issuerAddress) ?? createDefaultTrustLineFlags())
+                : createDefaultTrustLineFlags()
+            )
+          : refreshTrustLinesForAddress(nextAddress);
+
+        const [nextBalances, trustlineFlags] = await Promise.all([nextBalancesPromise, trustlineFlagsPromise]);
+
+        if (options?.skipTrustLineRefresh && issuerAddress) {
+          const normalizedFlags: Record<AppToken, boolean> = {
+            RLUSD: Boolean(trustlineFlags.RLUSD),
+            SAIL: Boolean(trustlineFlags.SAIL),
+            NYRA: Boolean(trustlineFlags.NYRA),
+          };
+          setHasTrustLineByToken(normalizedFlags);
+          setTrustLineStatusByToken(toStatusMap(normalizedFlags));
+        }
+
         const nextRlusdBalance = parseRlusdBalance(nextBalances, issuerAddress);
         setBalances(nextBalances);
         setRlusdBalance(nextRlusdBalance);
@@ -293,9 +331,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [address, balances, issuerAddress]);
 
   useEffect(() => {
-    if (!address) return;
-    void refreshTrustLinesForAddress(address);
-  }, [address, issuerAddress, refreshTrustLinesForAddress]);
+    if (!address || !issuerAddress) return;
+    const cached = loadWalletTrustLineFlags(address, issuerAddress);
+    if (!cached) {
+      setHasTrustLineByToken(createDefaultTrustLineFlags());
+      setTrustLineStatusByToken(createDefaultTrustLineStatus());
+      return;
+    }
+
+    const nextFlags: Record<AppToken, boolean> = {
+      RLUSD: cached.RLUSD,
+      SAIL: cached.SAIL,
+      NYRA: cached.NYRA,
+    };
+    setHasTrustLineByToken(nextFlags);
+    setTrustLineStatusByToken(toStatusMap(nextFlags));
+  }, [address, issuerAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,11 +368,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const localWallet = getWalletFromSeed(seed);
           if (cancelled) return;
 
-          setConnectionType('local');
-          setAddress(localWallet.address);
-          await refreshBalancesForAddress(localWallet.address);
-          return;
-        }
+            setConnectionType('local');
+            setAddress(localWallet.address);
+            await refreshBalancesForAddress(localWallet.address, { skipTrustLineRefresh: true });
+            return;
+          }
       } catch {
         clearWalletConnection();
         if (!cancelled) {

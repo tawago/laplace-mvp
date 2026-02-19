@@ -11,7 +11,7 @@ import {
   fundWalletFromFaucet,
   generateWallet,
   getWalletFromSeed,
-  submitTrustLine,
+  submitTrustLinesParallelWithIncrementalSequence,
   type TokenBalance,
   type WalletInfo,
 } from '@/lib/client/xrpl';
@@ -108,10 +108,6 @@ export default function AdminPage() {
     }
   }, [wallet?.address]);
 
-  useEffect(() => {
-    void refreshTrustLineStatuses();
-  }, [refreshTrustLineStatuses]);
-
   const copyAddress = useCallback(() => {
     if (!wallet) return;
     navigator.clipboard.writeText(wallet.address);
@@ -132,6 +128,7 @@ export default function AdminPage() {
         toast.error('Wallet generated but XRP faucet funding failed');
         return;
       }
+      await refreshBalances(nextWallet.address);
 
       if (!config?.issuerAddress) {
         await refreshBalances(nextWallet.address);
@@ -140,27 +137,27 @@ export default function AdminPage() {
       }
 
       const failedTokens: TokenCode[] = [];
-      for (const token of TOKEN_LIST) {
-        const currencyCode = getTokenCode(token);
-        if (!currencyCode) {
-          failedTokens.push(token);
-          continue;
-        }
+      const currencies = TOKEN_LIST.map((token) => getTokenCode(token) || token);
+      setTrustlineEstablishing({ SAIL: true, NYRA: true, RLUSD: true });
+      try {
+        const trustlineResults = await submitTrustLinesParallelWithIncrementalSequence(
+          nextWallet.seed,
+          config.issuerAddress,
+          currencies
+        );
 
-        setTrustlineEstablishing((prev) => ({ ...prev, [token]: true }));
-        try {
-          const trustLine = await submitTrustLine(nextWallet.seed, config.issuerAddress, currencyCode);
-          if (trustLine.result !== 'tesSUCCESS') {
+        for (const token of TOKEN_LIST) {
+          const currencyCode = getTokenCode(token) || token;
+          const matched = trustlineResults.find((result) => result.currency === currencyCode);
+          if (!matched || matched.result !== 'tesSUCCESS') {
             failedTokens.push(token);
           }
-        } catch {
-          failedTokens.push(token);
-        } finally {
-          setTrustlineEstablishing((prev) => ({ ...prev, [token]: false }));
         }
+      } catch {
+        failedTokens.push(...TOKEN_LIST);
+      } finally {
+        setTrustlineEstablishing({ SAIL: false, NYRA: false, RLUSD: false });
       }
-
-      await refreshBalances(nextWallet.address);
       await connectLocalWallet();
       await refreshTrustLineStatuses();
 

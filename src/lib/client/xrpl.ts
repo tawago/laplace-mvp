@@ -212,6 +212,54 @@ export async function submitTrustLine(
   };
 }
 
+export async function submitTrustLinesParallelWithIncrementalSequence(
+  seed: string,
+  issuer: string,
+  currencies: string[],
+  limit: string = '1000000'
+): Promise<Array<{ currency: string; hash: string; result: string }>> {
+  const client = await getClientBrowser();
+  const wallet = Wallet.fromSeed(seed);
+  const normalizedCurrencies = currencies.map((currency) => getTokenCode(currency) || currency);
+
+  const accountInfo = await client.request({
+    command: 'account_info',
+    account: wallet.address,
+    ledger_index: 'current',
+  });
+  const baseSequence = accountInfo.result.account_data.Sequence;
+
+  const submissions = normalizedCurrencies.map(async (currency, index) => {
+    const intendedSequence = baseSequence + index;
+    const tx = await client.autofill({
+      TransactionType: 'TrustSet',
+      Account: wallet.address,
+      LimitAmount: {
+        currency,
+        issuer,
+        value: limit,
+      },
+      Sequence: intendedSequence,
+    } as never);
+
+    (tx as { Sequence: number }).Sequence = intendedSequence;
+
+    const submitResult = await client.submitAndWait(tx as never, {
+      wallet,
+      autofill: false,
+    } as never);
+    const result = extractResultCode(submitResult.result.meta);
+
+    return {
+      currency,
+      hash: submitResult.result.hash,
+      result,
+    };
+  });
+
+  return Promise.all(submissions);
+}
+
 /**
  * Send tokens to backend for swap
  */
