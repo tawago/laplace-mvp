@@ -82,6 +82,7 @@ import {
   SupplyPositionMetrics,
   PoolMetrics,
 } from './types';
+import { DEFAULT_LOAN_TERM_MONTHS } from './constants';
 import { getTokenCode } from '../xrpl/currency-codes';
 import {
   checkVaultSupport,
@@ -662,7 +663,7 @@ export async function prepareBorrow(
         issuer: market.collateral_issuer,
         value: loaded.context.position.collateralAmount.toString(),
       },
-    termMonths: 3,
+    termMonths: DEFAULT_LOAN_TERM_MONTHS,
     annualInterestBps: Math.round(market.base_interest_rate * 10000),
     additionalFields: {
       Counterparty: loanBrokerWallet.address,
@@ -811,7 +812,7 @@ export async function confirmBorrowWithSignedTx(
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
-      loanTermMonths: 3,
+      loanTermMonths: DEFAULT_LOAN_TERM_MONTHS,
       loanMaturityDate: rippleEpochToDate(loanInfo.maturityDate),
       loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
     });
@@ -941,7 +942,7 @@ export async function processBorrowWithBorrowerSeed(
         issuer: market.collateral_issuer,
         value: position.collateralAmount.toString(),
       },
-      termMonths: 3,
+      termMonths: DEFAULT_LOAN_TERM_MONTHS,
       annualInterestBps: Math.round(market.base_interest_rate * 10000),
       additionalFields: {
         Counterparty: loanBrokerWallet.address,
@@ -1005,7 +1006,7 @@ export async function processBorrowWithBorrowerSeed(
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
-      loanTermMonths: 3,
+      loanTermMonths: DEFAULT_LOAN_TERM_MONTHS,
       loanMaturityDate: rippleEpochToDate(loanInfo.maturityDate),
       loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
     });
@@ -1585,7 +1586,7 @@ export async function processBorrow(
         issuer: market.collateral_issuer,
         value: position.collateralAmount.toString(),
       },
-      termMonths: 3,
+      termMonths: DEFAULT_LOAN_TERM_MONTHS,
       annualInterestBps: Math.round(market.base_interest_rate * 10000),
     });
 
@@ -1626,7 +1627,7 @@ export async function processBorrow(
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
-      loanTermMonths: 3,
+      loanTermMonths: DEFAULT_LOAN_TERM_MONTHS,
       loanMaturityDate: rippleEpochToDate(loanInfo.maturityDate),
       loanOpenedAtLedgerIndex: loanSet.ledgerIndex,
     });

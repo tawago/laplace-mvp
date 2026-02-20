@@ -9,11 +9,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { BalancesCard } from './components/balances-card';
-import { BorrowerActionsCard } from './components/borrower-actions-card';
 import { BorrowerActivityCard } from './components/borrower-activity-card';
-import { MarketInfoCard } from './components/market-info-card';
-import { PositionCard } from './components/position-card';
+import { EstimateCalculatorCard } from './components/estimate-calculator-card';
+import { MarketActionsCard } from './components/market-actions-card';
+import { PositionBalanceCard } from './components/position-balance-card';
 import { TokenHolderBenefits } from './components/token-holder-benefits';
 import type {
   BorrowerEvent,
@@ -35,7 +34,6 @@ import {
 import { loadWalletSeed } from '@/lib/client/wallet-storage';
 import { getTokenCode, getTokenSymbol } from '@/lib/xrpl/currency-codes';
 
-const DISPLAY_TOKENS = ['SAIL', 'NYRA', 'RLUSD'];
 const REPAY_BUFFER_RATE = 0.002;
 const REPAY_DECIMALS = 6;
 
@@ -69,7 +67,7 @@ export default function LendingPage() {
 
   const [depositAmount, setDepositAmount] = useState('100');
   const [borrowAmount, setBorrowAmount] = useState('50');
-  const [repayAmount, setRepayAmount] = useState('10');
+  const [repayAmount, setRepayAmount] = useState('0');
   const [repayKind, setRepayKind] = useState<RepayKind>('regular');
   const [withdrawAmount, setWithdrawAmount] = useState('10');
 
@@ -489,58 +487,57 @@ export default function LendingPage() {
             </TabsList>
 
             <TabsContent value="market-action" className="space-y-6">
-              <MarketInfoCard market={selectedMarket} />
+              <MarketActionsCard
+                market={selectedMarket}
+                walletConnected={Boolean(wallet)}
+                loading={loading}
+                collateralTrustlineReady={collateralTrustlineReady}
+                debtTrustlineReady={debtTrustlineReady}
+                metrics={metrics}
+                loanRepayment={loanRepayment}
+                repayBufferRate={REPAY_BUFFER_RATE}
+                depositAmount={depositAmount}
+                setDepositAmount={setDepositAmount}
+                borrowAmount={borrowAmount}
+                setBorrowAmount={setBorrowAmount}
+                repayAmount={repayAmount}
+                setRepayAmount={setRepayAmount}
+                repayKind={repayKind}
+                withdrawAmount={withdrawAmount}
+                setWithdrawAmount={setWithdrawAmount}
+                onDeposit={handleDeposit}
+                onBorrow={handleBorrow}
+                onRepay={handleRepay}
+                onWithdraw={handleWithdraw}
+                onApplyRepayPreset={applyRepayPreset}
+              />
 
               <div className="grid gap-6 lg:grid-cols-2">
-                <PositionCard
-                  isLoading={positionLoading || (!positionHydrated && Boolean(wallet?.address && selectedMarketId))}
+                <PositionBalanceCard
                   market={selectedMarket}
                   position={position}
                   metrics={metrics}
-                />
-
-                <BalancesCard
-                  tokens={DISPLAY_TOKENS}
-                  issuerAddress={config?.issuerAddress}
-                  isLoading={balancesLoading}
+                  positionLoading={positionLoading || (!positionHydrated && Boolean(wallet?.address && selectedMarketId))}
+                  balancesLoading={balancesLoading}
                   getBalance={getBalance}
                   onRefresh={() => {
-                    void refreshBalances();
+                    void Promise.all([refreshBalances(), refreshPosition()]);
                   }}
+                />
+
+                <EstimateCalculatorCard
+                  market={selectedMarket}
+                  position={position}
+                  loanRepayment={loanRepayment}
+                  initialSimulatedBorrowAmount={borrowAmount}
                 />
               </div>
 
               {wallet && (
-                <>
-                  <BorrowerActionsCard
-                    market={selectedMarket}
-                    loading={loading}
-                    collateralTrustlineReady={collateralTrustlineReady}
-                    debtTrustlineReady={debtTrustlineReady}
-                    metrics={metrics}
-                    loanRepayment={loanRepayment}
-                    repayBufferRate={REPAY_BUFFER_RATE}
-                    depositAmount={depositAmount}
-                    setDepositAmount={setDepositAmount}
-                    borrowAmount={borrowAmount}
-                    setBorrowAmount={setBorrowAmount}
-                    repayAmount={repayAmount}
-                    setRepayAmount={setRepayAmount}
-                    repayKind={repayKind}
-                    withdrawAmount={withdrawAmount}
-                    setWithdrawAmount={setWithdrawAmount}
-                    onDeposit={handleDeposit}
-                    onBorrow={handleBorrow}
-                    onRepay={handleRepay}
-                    onWithdraw={handleWithdraw}
-                    onApplyRepayPreset={applyRepayPreset}
-                  />
-
-                  <BorrowerActivityCard
-                    isLoading={positionLoading || (!positionHydrated && Boolean(wallet?.address && selectedMarketId))}
-                    events={events}
-                  />
-                </>
+                <BorrowerActivityCard
+                  isLoading={positionLoading || (!positionHydrated && Boolean(wallet?.address && selectedMarketId))}
+                  events={events}
+                />
               )}
             </TabsContent>
 

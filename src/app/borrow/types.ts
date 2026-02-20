@@ -9,6 +9,9 @@ export interface Market {
   maxLtvRatio: number;
   liquidationLtvRatio: number;
   baseInterestRate: number;
+  loanTermMonths: number;
+  totalSupplied?: number;
+  totalBorrowed?: number;
   prices: {
     collateralPriceUsd: number;
     debtPriceUsd: number;
@@ -64,6 +67,16 @@ export interface BorrowerEvent {
   currency: string | null;
   createdAt: string;
   errorMessage: string | null;
+}
+
+export interface AmortizationDataPoint {
+  period: number;
+  monthLabel: string;
+  principalPaid: number;
+  interestPaid: number;
+  cumulativePrincipal: number;
+  cumulativeInterest: number;
+  remainingBalance: number;
 }
 
 export type RepayKind = 'regular' | 'full' | 'overpayment' | 'late';
