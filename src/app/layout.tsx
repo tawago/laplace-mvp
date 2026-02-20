@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sheng Tai International - Tokenized Hotel Investment Platform",
+  title: "LAPLACE - Tokenized Hotel Investment Platform",
   description: "Invest in premium Malaysian hotels with guaranteed returns up to 8% p.a. Blockchain-powered real estate investment made simple.",
 };
 

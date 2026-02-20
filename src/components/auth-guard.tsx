@@ -56,7 +56,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
               <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-950/20">
                 <p className="text-sm text-blue-900 dark:text-blue-100">
-                  <strong>New to Sheng Tai International?</strong>
+                  <strong>New to LAPLACE?</strong>
                 </p>
                 <p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
                   Create an account instantly with your social login. No complicated forms or seed phrases required.

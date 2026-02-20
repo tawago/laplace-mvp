@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import Image from 'next/image';
+import { BrandMark } from '@/components/brand-mark';
 
 export function Footer() {
   return (
@@ -8,15 +8,8 @@ export function Footer() {
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div>
-            <Link href="/" className="flex items-center space-x-2">
-              <Image 
-                src="/images/logo.png" 
-                alt="Sheng Tai International" 
-                width={32} 
-                height={32}
-                className="h-8 w-8 object-contain"
-              />
-              <span className="text-xl font-bold">Sheng Tai International</span>
+            <Link href="/" className="flex items-center">
+              <BrandMark textClassName="text-xl" />
             </Link>
             <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
               Tokenized real estate investment platform powered by blockchain technology.
@@ -80,7 +73,7 @@ export function Footer() {
 
         <div className="mt-8 border-t pt-8">
           <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
-            © 2024 Sheng Tai International. All rights reserved.
+            © 2024 LAPLACE. All rights reserved.
           </p>
         </div>
       </div>

@@ -1,4 +1,4 @@
-# Resumo em Markdown dos dois PDFs sobre investimentos da **Sheng Tai International**
+# Resumo em Markdown dos dois PDFs sobre investimentos da **LAPLACE**
 
 ---
 
@@ -31,14 +31,14 @@
 
 - Abertura de conta bancária na Malásia, suporte completo em japonês, estadias gratuitas anuais (13 noites), isenção de custos de manutenção durante o GRR .
 
-### Sobre a Sheng Tai International
+### Sobre a LAPLACE
 
 - Fundada em 2012 por **Dato’ Leong Sir Ley**; sem dívida bancária, histórico de reestruturações de ativos estressados e múltiplos prêmios do setor .
 - Expansão: HK (2012) → Xangai (2019) → Tóquio (2020) → Osaka & Reino Unido (2023) .
 
 ---
 
-## 2. SHENG TAI JAPAN MARKETING INTERNATIONAL 株式会社.pdf (edição de **dez 2020**)
+## 2. LAPLACE JAPAN MARKETING INTERNATIONAL 株式会社.pdf (edição de **dez 2020**)
 
 ### Pano de fundo
 

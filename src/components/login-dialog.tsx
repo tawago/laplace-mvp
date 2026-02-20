@@ -23,7 +23,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
     try {
       await login(provider);
       await connectLocalWallet();
-      toast.success('Welcome to Sheng Tai International!', {
+      toast.success('Welcome to LAPLACE!', {
         description: 'Your smart account is connected to the local admin wallet.',
       });
       onOpenChange(false);
@@ -40,7 +40,7 @@ export function LoginDialog({ open, onOpenChange }: LoginDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Welcome to Sheng Tai International</DialogTitle>
+          <DialogTitle>Welcome to LAPLACE</DialogTitle>
           <DialogDescription>
             Sign in with your social account. We&apos;ll create a secure wallet for you automatically.
           </DialogDescription>
