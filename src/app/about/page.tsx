@@ -22,7 +22,7 @@ export default function AboutPage() {
               Established 2012
             </Badge>
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">
-              Sheng Tai International
+              LAPLACE
             </h1>
             <p className="mx-auto mt-6 max-w-3xl text-lg text-zinc-600 dark:text-zinc-400">
               A leading real estate tokenization platform revolutionizing property investment 
@@ -39,7 +39,7 @@ export default function AboutPage() {
             <div>
               <h2 className="mb-6 text-2xl font-bold">Pioneering Tokenized Real Estate</h2>
               <p className="mb-4 text-zinc-600 dark:text-zinc-400">
-                Founded by Dato&apos; Leong Sir Ley, Sheng Tai International has grown from a 
+                Founded by Dato&apos; Leong Sir Ley, LAPLACE has grown from a 
                 boutique real estate firm to a global leader in property tokenization. 
                 We specialize in transforming premium hotel assets into accessible investment 
                 opportunities through blockchain technology.

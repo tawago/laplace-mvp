@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +12,7 @@ import {
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LoginDialog } from '@/components/login-dialog';
 import { UserMenu } from '@/components/user-menu';
+import { BrandMark } from '@/components/brand-mark';
 import { ChevronDown, Menu, X, Wallet } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -25,15 +25,8 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:bg-zinc-950/95 dark:supports-[backdrop-filter]:bg-zinc-950/60">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
-        <Link href="/" className="flex items-center space-x-2">
-          <Image
-            src="/images/logo.png"
-            alt="Sheng Tai International"
-            width={32}
-            height={32}
-            className="h-8 w-8 object-contain"
-          />
-          <span className="text-sm sm:text-xl font-bold">Sheng Tai International</span>
+        <Link href="/" className="flex items-center">
+          <BrandMark textClassName="text-3xl" />
         </Link>
 
         {/* Desktop Navigation */}
