@@ -22,7 +22,8 @@ export function PoolOverviewCard({ isLoading, pool, market, formatAmount, format
       <CardContent className="space-y-4">
         {isLoading ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Skeleton tone="light" className="h-20 rounded-xl" />
               <Skeleton tone="light" className="h-20 rounded-xl" />
               <Skeleton tone="light" className="h-20 rounded-xl" />
             </div>
@@ -38,17 +39,25 @@ export function PoolOverviewCard({ isLoading, pool, market, formatAmount, format
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
               <div className="rounded-xl bg-slate-50 p-3">
                 <p className="text-xs text-slate-500">Total Supplied</p>
                 <p className="mt-1 text-lg font-semibold text-slate-900">
-                  {formatAmount(pool?.totalSupplied ?? 0, 4)} {getTokenSymbol(market.debtCurrency)}
+                  {formatAmount(pool?.totalSupplied ?? 0, 2)} {getTokenSymbol(market.debtCurrency)}
+                </p>
+                <div className="my-2 h-px bg-zinc-300" />
+                <p className="text-xs text-slate-500">
+                  {formatAmount(pool?.totalShares ?? 0, 2)} total shares
                 </p>
               </div>
               <div className="rounded-xl bg-slate-50 p-3">
                 <p className="text-xs text-slate-500">Total Borrowed</p>
                 <p className="mt-1 text-lg font-semibold text-slate-900">
-                  {formatAmount(pool?.totalBorrowed ?? 0, 4)} {getTokenSymbol(market.debtCurrency)}
+                  {formatAmount(pool?.totalBorrowed ?? 0, 2)} {getTokenSymbol(market.debtCurrency)}
+                </p>
+                <div className="my-2 h-px bg-zinc-300" />
+                <p className="text-xs text-slate-500">
+                  {formatAmount(pool?.totalCollateralLocked ?? 0, 2)} {getTokenSymbol(market.collateralCurrency)} collateralized in escrow
                 </p>
               </div>
             </div>

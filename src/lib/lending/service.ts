@@ -53,10 +53,8 @@ import {
   calculateTotalDebt,
 } from './calculations';
 import {
-  addToTotalBorrowed,
   getAvailableLiquidity,
   getPoolMetrics,
-  removeFromTotalBorrowed,
   updateGlobalYieldIndex,
 } from './pool';
 import {
@@ -88,6 +86,7 @@ import {
   checkVaultSupport,
   createSupplyVault,
   getSupplyVaultInfo,
+  getMptIssuanceInfo,
   getSupplierShareBalance,
 } from '../xrpl/vault';
 import {
@@ -362,6 +361,12 @@ function getRepayFlags(repayKind: RepayKind): number {
   return 0;
 }
 
+function toLoanInterestRate(rateDecimal: number): number {
+  // XRPL LoanSet InterestRate is expressed in 1/1000th percent units.
+  // Example: 5.0% => 5000, 0.5% => 500.
+  return Math.round(rateDecimal * 100000);
+}
+
 function getLoanScaleDigits(raw: Record<string, unknown>): number {
   const scale = readLoanNumericField(raw, ['LoanScale', 'loanScale', 'loan_scale']);
   if (scale !== null && Number.isInteger(scale) && scale >= 0 && scale <= 16) {
@@ -414,9 +419,12 @@ async function getBorrowerOutstandingDebtOnChain(
       if (object.LoanBrokerID !== market.loan_broker_id) continue;
       if (object.Borrower !== borrowerAddress) continue;
 
+      const principal = readLoanNumericField(object, ['PrincipalOutstanding', 'Principal']);
+      const accruedInterest = readLoanNumericField(object, ['AccruedInterest', 'Interest']);
       const value =
-        readLoanNumericField(object, ['TotalValueOutstanding', 'OutstandingDebt', 'PrincipalOutstanding']) ??
-        0;
+        principal !== null
+          ? principal + Math.max(0, accruedInterest ?? 0)
+          : (readLoanNumericField(object, ['OutstandingDebt', 'Debt', 'TotalValueOutstanding']) ?? 0);
       totalDebt += value;
     }
 
@@ -424,6 +432,37 @@ async function getBorrowerOutstandingDebtOnChain(
   } catch {
     return null;
   }
+}
+
+function getLoanCurrentDebt(loanInfo: { principal: string | null; outstandingDebt: string | null; accruedInterest: string | null }): number {
+  const principal = parsePositiveNumber(loanInfo.principal);
+  const accruedInterest = parsePositiveNumber(loanInfo.accruedInterest);
+
+  if (principal !== null) {
+    return Math.max(0, principal + Math.max(0, accruedInterest ?? 0));
+  }
+
+  return Math.max(0, parsePositiveNumber(loanInfo.outstandingDebt) ?? 0);
+}
+
+async function getBorrowerOutstandingDebtForValidation(
+  market: MarketRecord,
+  borrowerAddress: string
+): Promise<number> {
+  const loanId = await findBorrowerActiveLoanIdOnChain(market, borrowerAddress);
+
+  if (loanId) {
+    try {
+      const client = await getClient();
+      const loanInfo = await getLoanInfo(client, loanId);
+      return getLoanCurrentDebt(loanInfo);
+    } catch {
+      // Fall back to account object scan below.
+    }
+  }
+
+  const chainDebt = await getBorrowerOutstandingDebtOnChain(market, borrowerAddress);
+  return Math.max(0, chainDebt ?? 0);
 }
 
 async function findBorrowerActiveLoanIdOnChain(
@@ -533,8 +572,7 @@ async function loadBorrowContext(
     return { error: createError('NO_POSITION', 'No active position found. Deposit collateral first.') };
   }
 
-  const totalDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
-  const currentDebt = Math.max(0, totalDebt ?? 0);
+  const currentDebt = await getBorrowerOutstandingDebtForValidation(market, userAddress);
 
   const canBorrow = validateBorrow(
     position.collateralAmount,
@@ -664,7 +702,7 @@ export async function prepareBorrow(
         value: loaded.context.position.collateralAmount.toString(),
       },
     termMonths: DEFAULT_LOAN_TERM_MONTHS,
-    annualInterestBps: Math.round(market.base_interest_rate * 10000),
+    annualInterestBps: toLoanInterestRate(market.base_interest_rate),
     additionalFields: {
       Counterparty: loanBrokerWallet.address,
       PaymentInterval: 60 * 60 * 24 * 30,
@@ -808,7 +846,6 @@ export async function confirmBorrowWithSignedTx(
     });
 
     await updateGlobalYieldIndex(marketId);
-    await addToTotalBorrowed(marketId, amount);
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
@@ -943,7 +980,7 @@ export async function processBorrowWithBorrowerSeed(
         value: position.collateralAmount.toString(),
       },
       termMonths: DEFAULT_LOAN_TERM_MONTHS,
-      annualInterestBps: Math.round(market.base_interest_rate * 10000),
+      annualInterestBps: toLoanInterestRate(market.base_interest_rate),
       additionalFields: {
         Counterparty: loanBrokerWallet.address,
         PaymentInterval: 60 * 60 * 24 * 30,
@@ -1002,7 +1039,6 @@ export async function processBorrowWithBorrowerSeed(
     });
 
     await updateGlobalYieldIndex(marketId);
-    await addToTotalBorrowed(marketId, amount);
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
@@ -1525,8 +1561,7 @@ export async function processBorrow(
     return { error: createError('NO_POSITION', 'No active position found. Deposit collateral first.') };
   }
 
-  const totalDebt = await getBorrowerOutstandingDebtOnChain(market, userAddress);
-  const currentDebt = Math.max(0, totalDebt ?? 0);
+  const currentDebt = await getBorrowerOutstandingDebtForValidation(market, userAddress);
 
   // Validate LTV
   const canBorrow = validateBorrow(
@@ -1587,7 +1622,7 @@ export async function processBorrow(
         value: position.collateralAmount.toString(),
       },
       termMonths: DEFAULT_LOAN_TERM_MONTHS,
-      annualInterestBps: Math.round(market.base_interest_rate * 10000),
+      annualInterestBps: toLoanInterestRate(market.base_interest_rate),
     });
 
     const loanSetSubmit = await client.submitAndWait(loanSetTx as never, {
@@ -1623,7 +1658,6 @@ export async function processBorrow(
 
     // Update position
     await updateGlobalYieldIndex(marketId);
-    await addToTotalBorrowed(marketId, amount);
     await setPositionLoanMetadata(position.id, {
       loanId: loanSet.loanId,
       loanHash: loanSet.txHash,
@@ -1788,7 +1822,7 @@ export async function processRepay(
     };
 
     const loanInfoBeforePay = await getFreshLoanInfo();
-    const debtBeforePay = parsePositiveNumber(loanInfoBeforePay.outstandingDebt) ?? 0;
+    const debtBeforePay = getLoanCurrentDebt(loanInfoBeforePay);
     if (debtBeforePay <= 0) {
       const paymentRemaining = readLoanNumericField(loanInfoBeforePay.raw, [
         'PaymentRemaining',
@@ -1826,7 +1860,7 @@ export async function processRepay(
       };
     }
 
-    const fullRepayment = parsePositiveNumber(loanInfoBeforePay.outstandingDebt);
+    const fullRepayment = getLoanCurrentDebt(loanInfoBeforePay);
     const requestedAmount =
       repayKind === 'full' && fullRepayment !== null
         ? new Decimal(Math.max(amount, fullRepayment)).plus(getSmallestUnitForLoan(loanInfoBeforePay.raw)).toNumber()
@@ -1990,7 +2024,7 @@ export async function processRepay(
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const loanInfoAfterPay = await getFreshLoanInfo();
-        debtAfterPay = parsePositiveNumber(loanInfoAfterPay.outstandingDebt) ?? 0;
+        debtAfterPay = getLoanCurrentDebt(loanInfoAfterPay);
         principalAfterPay = parsePositiveNumber(loanInfoAfterPay.principal) ?? debtAfterPay;
         interestAfterPay =
           parsePositiveNumber(loanInfoAfterPay.accruedInterest) ?? Math.max(0, debtAfterPay - principalAfterPay);
@@ -2414,7 +2448,6 @@ export async function processLiquidation(
       // Mark position as liquidated
       if (updatedPosition.loanPrincipal > 0) {
         await updateGlobalYieldIndex(marketId);
-        await removeFromTotalBorrowed(marketId, updatedPosition.loanPrincipal);
       }
       await markLiquidated(position.id);
 
@@ -2489,7 +2522,7 @@ export async function getPositionWithMetrics(
     try {
       const client = await getClient();
       const loanInfo = await getLoanInfo(client, resolvedLoanId);
-      const totalDebt = parsePositiveNumber(loanInfo.outstandingDebt);
+      const totalDebt = getLoanCurrentDebt(loanInfo);
       if (totalDebt !== null) {
         const principal = parsePositiveNumber(loanInfo.principal);
         const accruedInterest = parsePositiveNumber(loanInfo.accruedInterest);
@@ -2500,6 +2533,7 @@ export async function getPositionWithMetrics(
           ...position,
           loanPrincipal: toAmount(principalValue),
           interestAccrued: toAmount(interestValue),
+          lastInterestUpdate: new Date(),
         };
       }
 
@@ -2545,6 +2579,7 @@ export async function getPositionWithMetrics(
         ...position,
         loanPrincipal: toAmount(Math.max(0, borrowerDebt ?? 0)),
         interestAccrued: 0,
+        lastInterestUpdate: new Date(),
       };
 
       if (borrowerDebt !== null && borrowerDebt <= 0) {
@@ -2558,6 +2593,7 @@ export async function getPositionWithMetrics(
       ...position,
       loanPrincipal: toAmount(Math.max(0, borrowerDebt ?? 0)),
       interestAccrued: 0,
+      lastInterestUpdate: new Date(),
     };
 
     if (borrowerDebt !== null && borrowerDebt <= 0 && (position.loanPrincipal > 0 || position.interestAccrued > 0 || position.loanId)) {
@@ -3189,22 +3225,26 @@ export async function getSupplyPositionWithMetrics(
   if (market.supply_mpt_issuance_id) {
     const client = await getClient();
     const trackedPosition = await getSupplyPositionForUser(userAddress, marketId);
-    const vaultInfo = market.supply_vault_id
-      ? await getSupplyVaultInfo(client, market.supply_vault_id)
-      : null;
-    const shareBalance = await getSupplierShareBalance(
-      client,
-      userAddress,
-      market.supply_mpt_issuance_id
-    );
-    const shareScale = Math.max(0, market.vault_scale ?? 6);
+    const [vaultInfo, shareBalance, issuanceInfo] = await Promise.all([
+      market.supply_vault_id ? getSupplyVaultInfo(client, market.supply_vault_id) : Promise.resolve(null),
+      getSupplierShareBalance(client, userAddress, market.supply_mpt_issuance_id),
+      getMptIssuanceInfo(client, market.supply_mpt_issuance_id),
+    ]);
+    const shareScale = Math.max(0, issuanceInfo?.assetScale ?? market.vault_scale ?? 6);
     const onchainSupplyAmount = toAmount(
       new Decimal(shareBalance.shares).div(new Decimal(10).pow(shareScale))
     );
-    const exchangeRate = vaultInfo ? new Decimal(vaultInfo.exchangeRate) : new Decimal(1);
+    const totalOutstandingShares = issuanceInfo
+      ? new Decimal(issuanceInfo.outstandingAmount).div(new Decimal(10).pow(shareScale))
+      : new Decimal(0);
+    const exchangeRate = vaultInfo && totalOutstandingShares.gt(0)
+      ? new Decimal(vaultInfo.assetsTotal).div(totalOutstandingShares)
+      : vaultInfo
+      ? new Decimal(vaultInfo.exchangeRate)
+      : new Decimal(1);
     const grossPositionValue = toAmount(new Decimal(onchainSupplyAmount).mul(exchangeRate));
 
-    const principalAmount = trackedPosition?.supplyAmount ?? onchainSupplyAmount;
+    const principalAmount = trackedPosition?.supplyAmount ?? grossPositionValue;
 
     if (onchainSupplyAmount <= 0 && principalAmount <= 0 && grossPositionValue <= 0) {
       return null;

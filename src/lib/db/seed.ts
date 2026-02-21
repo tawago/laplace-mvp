@@ -5,7 +5,7 @@
  * Seeds the database with initial market data for the collateral and loan markets.
  */
 
-import { eq, and, notInArray } from 'drizzle-orm';
+import { eq, and, notInArray, sql } from 'drizzle-orm';
 import { db, users, markets, priceOracle } from './index';
 import { TOKEN_CODE_BY_SYMBOL } from '@/lib/xrpl/currency-codes';
 
@@ -18,11 +18,13 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
       name: 'SAIL-RLUSD',
       collateralCurrency: TOKEN_CODE_BY_SYMBOL.SAIL,
       debtCurrency: TOKEN_CODE_BY_SYMBOL.RLUSD,
+      collateralPriceUsd: '100.0',
     },
     {
       name: 'NYRA-RLUSD',
       collateralCurrency: TOKEN_CODE_BY_SYMBOL.NYRA,
       debtCurrency: TOKEN_CODE_BY_SYMBOL.RLUSD,
+      collateralPriceUsd: '123.0',
     },
   ];
 
@@ -37,7 +39,7 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
         collateralIssuer: issuerAddress,
         debtCurrency: config.debtCurrency,
         debtIssuer: issuerAddress,
-        maxLtvRatio: '0.75',
+        maxLtvRatio: '0.50',
         liquidationLtvRatio: '0.85',
         baseInterestRate: '0.05',
         liquidationPenalty: '0.1',
@@ -62,7 +64,7 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
           collateralIssuer: issuerAddress,
           debtCurrency: config.debtCurrency,
           debtIssuer: issuerAddress,
-          maxLtvRatio: '0.75',
+          maxLtvRatio: '0.50',
           liquidationLtvRatio: '0.85',
           baseInterestRate: '0.05',
           liquidationPenalty: '0.1',
@@ -102,7 +104,7 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
         {
           marketId: market.id,
           assetSide: 'COLLATERAL',
-          priceUsd: '1.0',
+          priceUsd: config.collateralPriceUsd,
           source: 'MOCK',
         },
         {
@@ -112,7 +114,14 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
           source: 'MOCK',
         },
       ])
-      .onConflictDoNothing({ target: [priceOracle.marketId, priceOracle.assetSide] });
+      .onConflictDoUpdate({
+        target: [priceOracle.marketId, priceOracle.assetSide],
+        set: {
+          priceUsd: sql`excluded.price_usd`,
+          source: 'MOCK',
+          updatedAt: new Date(),
+        },
+      });
 
     console.log(`Seeded market ${market.id} (${config.name}) with initial prices`);
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { and, desc, eq } from 'drizzle-orm';
 import { db, purchaseOrders } from '@/lib/db';
+import { getAllActiveMarkets, getMarketPrices } from '@/lib/db/seed';
 import { hotels } from '@/data/hotels';
 
 function isLikelyXrplAddress(address: string): boolean {
@@ -23,6 +24,24 @@ export async function GET(request: NextRequest) {
       orderBy: [desc(purchaseOrders.createdAt)],
     });
 
+    const marketPriceEntries = await Promise.all(
+      (await getAllActiveMarkets()).map(async (market) => ({
+        name: market.name,
+        prices: await getMarketPrices(market.id),
+      }))
+    );
+
+    const currentPriceByHotelId: Record<string, number> = {};
+    for (const market of marketPriceEntries) {
+      if (!market.prices) continue;
+      if (market.name.toUpperCase().includes('SAIL')) {
+        currentPriceByHotelId['the-sail'] = market.prices.collateralPriceUsd;
+      }
+      if (market.name.toUpperCase().includes('NYRA')) {
+        currentPriceByHotelId.nyra = market.prices.collateralPriceUsd;
+      }
+    }
+
     const holdings = orders.map((order) => {
       const hotel = hotels.find((entry) => entry.id === order.hotelId);
       const unit = hotel?.units.find((entry) => entry.id === order.unitId);
@@ -30,7 +49,8 @@ export async function GET(request: NextRequest) {
       const tokenAmount = Number(order.tokenAmount);
       const pricePerToken = Number(order.pricePerTokenUsd);
       const totalPrice = Number(order.totalPaymentAmount);
-      const currentTokenPrice = hotel?.tokenPrice ?? pricePerToken;
+      const currentTokenPrice =
+        currentPriceByHotelId[order.hotelId] ?? hotel?.tokenPrice ?? pricePerToken;
 
       return {
         id: order.id,

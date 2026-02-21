@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Shield, LogIn } from 'lucide-react';
+import { Shield, LogIn, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 import { LoginDialog } from '@/components/login-dialog';
 import { useState } from 'react';
@@ -13,9 +13,17 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
   const [showLogin, setShowLogin] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-900">
+        <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
+      </div>
+    );
+  }
 
   if (!user) {
     return (

@@ -1,9 +1,9 @@
 import Decimal from 'decimal.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
-import { db, markets } from '../db';
+import { db, markets, positions } from '../db';
 import { getClient } from '../xrpl/client';
-import { getSupplyVaultInfo } from '../xrpl/vault';
+import { getMptIssuanceInfo, getSupplyVaultInfo } from '../xrpl/vault';
 import {
   calculateGlobalYieldIndex,
   calculateSupplyApr,
@@ -24,6 +24,8 @@ interface MarketPoolState {
   id: string;
   totalSupplied: number;
   totalBorrowed: number;
+  totalCollateralLocked: number;
+  totalShares: number | null;
   vaultAvailableAssets: number | null;
   loanBrokerAddress: string | null;
   loanBrokerId: string | null;
@@ -32,6 +34,8 @@ interface MarketPoolState {
   globalYieldIndex: number;
   lastIndexUpdate: Date;
   supplyVaultId: string | null;
+  supplyMptIssuanceId: string | null;
+  vaultScale: number;
 }
 
 function toAmount(value: Decimal.Value): number {
@@ -43,6 +47,8 @@ function parsePoolState(row: typeof markets.$inferSelect): MarketPoolState {
     id: row.id,
     totalSupplied: parseFloat(row.totalSupplied),
     totalBorrowed: parseFloat(row.totalBorrowed),
+    totalCollateralLocked: 0,
+    totalShares: null,
     vaultAvailableAssets: null,
     loanBrokerAddress: row.loanBrokerAddress,
     loanBrokerId: row.loanBrokerId,
@@ -51,6 +57,8 @@ function parsePoolState(row: typeof markets.$inferSelect): MarketPoolState {
     globalYieldIndex: parseFloat(row.globalYieldIndex),
     lastIndexUpdate: row.lastIndexUpdate,
     supplyVaultId: row.supplyVaultId,
+    supplyMptIssuanceId: row.supplyMptIssuanceId,
+    vaultScale: row.vaultScale,
   };
 }
 
@@ -67,12 +75,35 @@ function parsePositiveAmount(value: unknown): number | null {
   return null;
 }
 
+function extractLoanAmountField(loanObject: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    if (!(key in loanObject)) continue;
+    const raw = loanObject[key];
+    const direct = parsePositiveAmount(raw);
+    if (direct !== null) {
+      return direct;
+    }
+    if (raw && typeof raw === 'object') {
+      const nestedValue = parsePositiveAmount((raw as Record<string, unknown>).value);
+      if (nestedValue !== null) {
+        return nestedValue;
+      }
+    }
+  }
+
+  return null;
+}
+
 function extractLoanOutstanding(loanObject: Record<string, unknown>): number {
+  const principal = extractLoanAmountField(loanObject, ['PrincipalOutstanding', 'Principal']);
+  const accruedInterest = extractLoanAmountField(loanObject, ['AccruedInterest', 'Interest']);
+
+  if (principal !== null) {
+    return principal + Math.max(0, accruedInterest ?? 0);
+  }
+
   const outstanding =
-    parsePositiveAmount(loanObject.TotalValueOutstanding) ??
-    parsePositiveAmount(loanObject.OutstandingDebt) ??
-    parsePositiveAmount(loanObject.PrincipalOutstanding) ??
-    0;
+    extractLoanAmountField(loanObject, ['OutstandingDebt', 'Debt', 'TotalValueOutstanding']) ?? 0;
 
   return outstanding;
 }
@@ -172,6 +203,47 @@ async function hydrateVaultPoolState(state: MarketPoolState): Promise<MarketPool
   }, `Failed to load vault state for market ${state.id}`);
 }
 
+async function hydrateSharePoolState(state: MarketPoolState): Promise<MarketPoolState> {
+  const issuanceId = state.supplyMptIssuanceId;
+  if (!issuanceId) {
+    return state;
+  }
+
+  return withOnChainRetry(async () => {
+    const client = await getClient();
+    const issuance = await getMptIssuanceInfo(client, issuanceId);
+
+    if (!issuance) {
+      return state;
+    }
+
+    const scale = Math.max(0, issuance.assetScale ?? state.vaultScale ?? 6);
+    const totalShares = toAmount(new Decimal(issuance.outstandingAmount).div(new Decimal(10).pow(scale)));
+
+    return {
+      ...state,
+      totalShares,
+    };
+  }, `Failed to load share state for market ${state.id}`);
+}
+
+async function hydrateCollateralPoolState(
+  state: MarketPoolState,
+  database: DbClient = db
+): Promise<MarketPoolState> {
+  const [result] = await database
+    .select({
+      total: sql<string>`coalesce(sum(${positions.collateralAmount}), 0)`,
+    })
+    .from(positions)
+    .where(and(eq(positions.marketId, state.id), eq(positions.status, 'ACTIVE')));
+
+  return {
+    ...state,
+    totalCollateralLocked: toAmount(result?.total ?? '0'),
+  };
+}
+
 async function getMarketPoolState(marketId: string, database: DbClient = db): Promise<MarketPoolState | null> {
   const market = await database.query.markets.findFirst({
     where: and(eq(markets.id, marketId), eq(markets.isActive, true)),
@@ -182,16 +254,23 @@ async function getMarketPoolState(marketId: string, database: DbClient = db): Pr
   }
 
   const baseState = parsePoolState(market);
-  const [vaultState, loanState] = await Promise.all([
+  const [vaultState, loanState, shareState, collateralState] = await Promise.all([
     hydrateVaultPoolState(baseState),
     hydrateLoanPoolState(baseState),
+    hydrateSharePoolState(baseState),
+    hydrateCollateralPoolState(baseState, database),
   ]);
 
   return {
     ...baseState,
-    totalSupplied: vaultState.totalSupplied,
+    totalSupplied:
+      vaultState.vaultAvailableAssets === null
+        ? vaultState.totalSupplied
+        : toAmount(new Decimal(vaultState.vaultAvailableAssets).add(loanState.totalBorrowed)),
     vaultAvailableAssets: vaultState.vaultAvailableAssets,
     totalBorrowed: loanState.totalBorrowed,
+    totalShares: shareState.totalShares,
+    totalCollateralLocked: collateralState.totalCollateralLocked,
   };
 }
 
@@ -210,6 +289,8 @@ function buildPoolMetrics(state: MarketPoolState): PoolMetrics {
     marketId: state.id,
     totalSupplied: state.totalSupplied,
     totalBorrowed: state.totalBorrowed,
+    totalCollateralLocked: state.totalCollateralLocked,
+    totalShares: state.totalShares ?? undefined,
     availableLiquidity,
     utilizationRate,
     borrowApr: state.baseInterestRate,
@@ -219,12 +300,6 @@ function buildPoolMetrics(state: MarketPoolState): PoolMetrics {
     reserveFactor: state.reserveFactor,
     lastIndexUpdate: state.lastIndexUpdate,
   };
-}
-
-function validatePositiveAmount(amount: number): void {
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error('Amount must be a positive number');
-  }
 }
 
 export async function getPoolMetrics(marketId: string, database: DbClient = db): Promise<PoolMetrics | null> {
@@ -278,128 +353,4 @@ export async function updateGlobalYieldIndex(
     supplyApr,
     lastIndexUpdate: now,
   };
-}
-
-export async function addToTotalSupplied(
-  marketId: string,
-  amount: number,
-  database: DbClient = db
-): Promise<number> {
-  validatePositiveAmount(amount);
-
-  const state = await getMarketPoolState(marketId, database);
-  if (!state) {
-    throw new Error('Market not found');
-  }
-
-  const nextTotalSupplied = toAmount(new Decimal(state.totalSupplied).add(amount));
-  await database
-    .update(markets)
-    .set({
-      totalSupplied: nextTotalSupplied.toString(),
-      updatedAt: new Date(),
-    })
-    .where(eq(markets.id, marketId));
-
-  return nextTotalSupplied;
-}
-
-export async function removeFromTotalSupplied(
-  marketId: string,
-  amount: number,
-  database: DbClient = db
-): Promise<number> {
-  validatePositiveAmount(amount);
-
-  const state = await getMarketPoolState(marketId, database);
-  if (!state) {
-    throw new Error('Market not found');
-  }
-
-  const supplied = new Decimal(state.totalSupplied);
-  const borrowed = new Decimal(state.totalBorrowed);
-  const amountDec = new Decimal(amount);
-
-  if (amountDec.gt(supplied)) {
-    throw new Error('Insufficient total supplied balance');
-  }
-
-  const nextTotalSupplied = supplied.sub(amountDec);
-  if (nextTotalSupplied.lt(borrowed)) {
-    throw new Error('Withdrawal would violate market liquidity constraints');
-  }
-
-  const nextValue = toAmount(nextTotalSupplied);
-  await database
-    .update(markets)
-    .set({
-      totalSupplied: nextValue.toString(),
-      updatedAt: new Date(),
-    })
-    .where(eq(markets.id, marketId));
-
-  return nextValue;
-}
-
-export async function addToTotalBorrowed(
-  marketId: string,
-  amount: number,
-  database: DbClient = db
-): Promise<number> {
-  validatePositiveAmount(amount);
-
-  const state = await getMarketPoolState(marketId, database);
-  if (!state) {
-    throw new Error('Market not found');
-  }
-
-  const supplied = new Decimal(state.totalSupplied);
-  const borrowed = new Decimal(state.totalBorrowed);
-  const nextTotalBorrowed = borrowed.add(amount);
-
-  if (nextTotalBorrowed.gt(supplied)) {
-    throw new Error('Insufficient pool liquidity for borrow');
-  }
-
-  const nextValue = toAmount(nextTotalBorrowed);
-  await database
-    .update(markets)
-    .set({
-      totalBorrowed: nextValue.toString(),
-      updatedAt: new Date(),
-    })
-    .where(eq(markets.id, marketId));
-
-  return nextValue;
-}
-
-export async function removeFromTotalBorrowed(
-  marketId: string,
-  amount: number,
-  database: DbClient = db
-): Promise<number> {
-  validatePositiveAmount(amount);
-
-  const state = await getMarketPoolState(marketId, database);
-  if (!state) {
-    throw new Error('Market not found');
-  }
-
-  const borrowed = new Decimal(state.totalBorrowed);
-  const amountDec = new Decimal(amount);
-
-  if (amountDec.gt(borrowed)) {
-    throw new Error('Repayment exceeds total borrowed');
-  }
-
-  const nextValue = toAmount(borrowed.sub(amountDec));
-  await database
-    .update(markets)
-    .set({
-      totalBorrowed: nextValue.toString(),
-      updatedAt: new Date(),
-    })
-    .where(eq(markets.id, marketId));
-
-  return nextValue;
 }

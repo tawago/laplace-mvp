@@ -70,8 +70,8 @@ export default function LenderPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [networkPendingCount, setNetworkPendingCount] = useState(0);
 
-  const [supplyAmount, setSupplyAmount] = useState('25');
-  const [withdrawAmount, setWithdrawAmount] = useState('10');
+  const [supplyAmount, setSupplyAmount] = useState('1000');
+  const [withdrawAmount, setWithdrawAmount] = useState('1000');
   const showGlobalLoading = networkPendingCount > 0;
 
   const beginNetworkRequest = useCallback(() => {

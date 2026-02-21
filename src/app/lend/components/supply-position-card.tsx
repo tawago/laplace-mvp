@@ -52,19 +52,19 @@ export function SupplyPositionCard({
             <div className="rounded-xl bg-slate-50 p-3">
               <p className="text-xs text-slate-500">Principal</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">
-                {formatAmount(position.supplyAmount, 4)} {getTokenSymbol(market.debtCurrency)}
+                {formatAmount(position.supplyAmount, 2)} {getTokenSymbol(market.debtCurrency)}
               </p>
             </div>
             <div className="rounded-xl bg-slate-50 p-3">
               <p className="text-xs text-slate-500">Earnings</p>
               <p className="mt-1 text-lg font-semibold text-emerald-600">
-                {formatAmount(positionMetrics.accruedYield, 4)} {getTokenSymbol(market.debtCurrency)}
+                {formatAmount(positionMetrics.accruedYield, 2)} {getTokenSymbol(market.debtCurrency)}
               </p>
             </div>
             <div className="rounded-xl bg-slate-50 p-3">
               <p className="text-xs text-slate-500">Share</p>
               <p className="mt-1 text-lg font-semibold text-slate-900">
-                {formatAmount(normalizeShares(shareBalance, market.vaultScale), 4)} shares
+                {formatAmount(normalizeShares(shareBalance, market.vaultScale), 2)} shares
               </p>
             </div>
           </div>

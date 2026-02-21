@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
 
@@ -17,6 +18,7 @@ interface MarketActionsCardProps {
   loading: string;
   collateralTrustlineReady: boolean;
   debtTrustlineReady: boolean;
+  poolLoading: boolean;
   metrics: PositionMetrics | null;
   loanRepayment: LoanRepaymentOverview | null;
   repayBufferRate: number;
@@ -42,6 +44,7 @@ export function MarketActionsCard({
   loading,
   collateralTrustlineReady,
   debtTrustlineReady,
+  poolLoading,
   metrics,
   loanRepayment,
   repayBufferRate,
@@ -115,9 +118,13 @@ export function MarketActionsCard({
               </div>
               <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <p className="text-xs uppercase tracking-wide text-zinc-500">Liquidity Pool</p>
-                <p className="mt-1 font-semibold">
-                  {poolSize.toFixed(2)} {debtSymbol}
-                </p>
+                {poolLoading ? (
+                  <Skeleton className="mt-1 h-5 w-28" />
+                ) : (
+                  <p className="mt-1 font-semibold">
+                    {poolSize.toFixed(2)} {debtSymbol}
+                  </p>
+                )}
               </div>
               <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <p className="text-xs uppercase tracking-wide text-zinc-500">Loan Period</p>

@@ -52,8 +52,6 @@ export {
   accrueInterest,
   addCollateral,
   removeCollateral,
-  addLoanPrincipal,
-  applyRepayment,
   closePosition,
   liquidatePosition,
   calculatePositionMetrics,
@@ -65,10 +63,6 @@ export {
   getPoolMetrics,
   getAvailableLiquidity,
   updateGlobalYieldIndex,
-  addToTotalSupplied,
-  removeFromTotalSupplied,
-  addToTotalBorrowed,
-  removeFromTotalBorrowed,
 } from './pool';
 
 // Supply position management
@@ -77,7 +71,6 @@ export {
   getOrCreateSupplyPosition,
   getSupplyPositionForUser,
   accrueSupplyYield,
-  checkpointSupplyYield,
   addSupply,
   removeSupply,
   closeSupplyPosition,
