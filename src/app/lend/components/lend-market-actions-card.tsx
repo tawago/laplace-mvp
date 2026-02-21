@@ -54,10 +54,10 @@ export function LendMarketActionsCard({
 
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
-      <CardContent className="min-h-60 p-6">
+      <CardContent className="min-h-60 px-6">
         <div className="flex flex-col lg:flex-row">
-          <section className="min-w-0 flex-1 space-y-4 pr-0 lg:basis-1/2 lg:pr-8">
-            <h2 className="text-base font-semibold text-slate-900">Pool Overview</h2>
+          <section className="min-w-0 flex-1 space-y-4 py-2 lg:basis-1/2">
+            <h2 className="text-lg font-semibold text-slate-900">Pool Overview</h2>
 
             {isLoading ? (
               <div className="space-y-3">
@@ -131,8 +131,8 @@ export function LendMarketActionsCard({
           <div className="my-6 h-px bg-slate-200 lg:my-0 lg:mx-8 lg:hidden" />
           <div className="mx-8 hidden w-px self-stretch bg-slate-200 lg:block" />
 
-          <section className="min-w-0 flex-1 pl-0 lg:basis-1/2 lg:pl-8">
-            <h2 className="mb-4 text-base font-semibold text-slate-900">Supply Actions</h2>
+          <section className="min-w-0 flex-1 lg:basis-1/2">
+            <h2 className="mb-4 text-lg font-semibold text-slate-900">Supply Actions</h2>
 
             <Tabs defaultValue="supply" className="w-full">
               <TabsList className="mb-6 !bg-slate-100">
