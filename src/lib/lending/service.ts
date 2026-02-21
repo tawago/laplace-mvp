@@ -2634,11 +2634,18 @@ function buildSupplyPositionMetrics(position: SupplyPosition, pool: PoolMetrics)
 function buildSupplyPositionMetricsWithBalances(
   principalAmount: number,
   grossPositionValue: number,
+  estimatedPositionShare: number,
   withdrawableAmount: number,
   pool: PoolMetrics
 ): SupplyPositionMetrics {
+  const normalizedShare = Number.isFinite(estimatedPositionShare)
+    ? Math.min(Math.max(estimatedPositionShare, 0), 1)
+    : 0;
+  const positionValueFromPoolShare = toAmount(pool.totalSupplied * normalizedShare);
+  const estimatedPositionValue = positionValueFromPoolShare > 0 ? positionValueFromPoolShare : grossPositionValue;
+
   return {
-    accruedYield: toAmount(Math.max(0, grossPositionValue - principalAmount)),
+    accruedYield: toAmount(Math.max(0, estimatedPositionValue - principalAmount)),
     withdrawableAmount: toAmount(withdrawableAmount),
     availableLiquidity: pool.availableLiquidity,
     utilizationRate: pool.utilizationRate,
@@ -3251,6 +3258,9 @@ export async function getSupplyPositionWithMetrics(
     }
 
     const withdrawableAmount = Math.min(grossPositionValue, pool.availableLiquidity);
+    const estimatedPositionShare = totalOutstandingShares.gt(0)
+      ? toAmount(new Decimal(onchainSupplyAmount).div(totalOutstandingShares))
+      : 0;
 
     const now = new Date();
     const onchainPosition: SupplyPosition = {
@@ -3270,6 +3280,7 @@ export async function getSupplyPositionWithMetrics(
     const metrics = buildSupplyPositionMetricsWithBalances(
       onchainPosition.supplyAmount,
       grossPositionValue,
+      estimatedPositionShare,
       withdrawableAmount,
       pool
     );
