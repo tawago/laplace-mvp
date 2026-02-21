@@ -70,7 +70,7 @@ export default function LendingPage() {
   const [borrowAmount, setBorrowAmount] = useState('50');
   const [repayAmount, setRepayAmount] = useState('0');
   const [repayKind, setRepayKind] = useState<RepayKind>('regular');
-  const [withdrawAmount, setWithdrawAmount] = useState('10');
+  const [withdrawAmount, setWithdrawAmount] = useState('100');
 
   const selectedMarket = useMemo(
     () => config?.markets.find((market) => market.id === selectedMarketId) ?? null,

@@ -94,9 +94,11 @@ export function MarketActionsCard({
       <CardContent className="min-h-60">
         <div className="flex flex-col lg:flex-row justify-between">
           <section className="flex-1 space-y-4 pr-10">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
               <h2 className="text-lg font-semibold">Market</h2>
-              <Badge variant="outline">{(market.baseInterestRate * 100).toFixed(2)}% APR</Badge>
+              <Badge variant="outline" className="shadow-xs shadow-amber-400/50">
+                {(market.baseInterestRate * 100).toFixed(2)}% APR
+              </Badge>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -217,7 +219,7 @@ export function MarketActionsCard({
                     </Button>
                   </div>
                   <p className="text-xs text-zinc-600 dark:text-zinc-400 flex flex-col">
-                    <span>Interest rate: {(market.baseInterestRate * 100).toFixed(2)}% APR</span>
+                    <span className="text-amber-400">Interest rate: {(market.baseInterestRate * 100).toFixed(2)}% APR</span>
                     <span>Loan period: {market.loanTermMonths} months </span>
                     <span>Estimated total repayment: {projectedRepayment.totalRepayment.toFixed(4)} {debtSymbol} </span>
                   </p>
