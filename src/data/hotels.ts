@@ -8,7 +8,7 @@ export const hotels: Hotel[] = [
     country: "Malaysia",
     description:
       "An architectural icon in Melaka, offering breathtaking views of the Strait of Malacca. This luxury hotel combines modern design with exceptional hospitality.",
-    roiGuaranteed: "5-8% p.a.",
+    roiGuaranteed: "8% p.a.",
     roiPercentage: 8,
     buybackYear: 19,
     buybackPercentage: 170,
