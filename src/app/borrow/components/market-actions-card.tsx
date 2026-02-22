@@ -159,7 +159,8 @@ export function MarketActionsCard({
                     </p>
                   )}
                   <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    Estimated max borrow from this deposit: {depositBasedBorrowCapacity.toFixed(0)} {debtSymbol}
+                    Estimated max borrow from this deposit: 
+                    <span className="text-amber-400"> {depositBasedBorrowCapacity.toFixed(0)} {debtSymbol}</span>
                     <span className="ml-1 text-zinc-500 dark:text-zinc-500">
                       ({safeDepositAmount.toFixed(0)} {collateralSymbol} x {(market.maxLtvRatio * 100).toFixed(0)}% max LTV)
                     </span>
