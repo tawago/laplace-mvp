@@ -112,15 +112,9 @@ export function LendMarketActionsCard({
 
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-slate-500">Borrow APR</p>
-                    <p className="mt-1 font-semibold text-slate-900">
-                      {formatPercent(pool?.borrowApr ?? market.baseInterestRate ?? 0)}
-                    </p>
-                  </div>
-                  <div>
                     <p className="text-slate-500">Supply APY</p>
                     <p className="mt-1 font-semibold text-emerald-600">
-                      {formatPercent(pool?.supplyApy ?? positionMetrics?.supplyApy ?? 0)}
+                      {formatPercent(pool?.borrowApr ?? market.baseInterestRate ?? 0)}
                     </p>
                   </div>
                 </div>
