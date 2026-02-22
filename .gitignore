@@ -43,5 +43,6 @@ next-env.d.ts
 certificates
 
 scripts/sync-vercel-env.ts
+scripts/wipe-db-full.ts
 CLAUDE.md
 AGENTS.md

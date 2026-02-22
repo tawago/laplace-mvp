@@ -15,7 +15,8 @@
     "verify:xls66": "npx tsx scripts/verify-xls66.ts",
     "setup:db": "npx tsx scripts/init-db.ts",
     "setup:all": "npm run setup:xrpl && npm run setup:db",
-    "sync:vercel-env": "npx tsx scripts/sync-vercel-env.ts"
+    "sync:vercel-env": "npx tsx scripts/sync-vercel-env.ts",
+    "wipe:db:full": "npx tsx scripts/wipe-db-full.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.0",

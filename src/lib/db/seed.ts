@@ -24,7 +24,7 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
       name: 'NYRA-RLUSD',
       collateralCurrency: TOKEN_CODE_BY_SYMBOL.NYRA,
       debtCurrency: TOKEN_CODE_BY_SYMBOL.RLUSD,
-      collateralPriceUsd: '123.0',
+      collateralPriceUsd: '100.0',
     },
   ];
 
@@ -41,7 +41,7 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
         debtIssuer: issuerAddress,
         maxLtvRatio: '0.50',
         liquidationLtvRatio: '0.85',
-        baseInterestRate: '0.05',
+        baseInterestRate: '0.04',
         liquidationPenalty: '0.1',
         minCollateralAmount: '10',
         minBorrowAmount: '5',
@@ -66,7 +66,7 @@ export async function seedMarket(issuerAddress: string): Promise<string> {
           debtIssuer: issuerAddress,
           maxLtvRatio: '0.50',
           liquidationLtvRatio: '0.85',
-          baseInterestRate: '0.05',
+          baseInterestRate: '0.04',
           liquidationPenalty: '0.1',
           minCollateralAmount: '10',
           minBorrowAmount: '5',
