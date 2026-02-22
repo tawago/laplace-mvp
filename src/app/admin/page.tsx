@@ -1,10 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Copy, Loader2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -23,6 +19,13 @@ import {
 } from '@/lib/client/wallet-storage';
 import { getTokenCode } from '@/lib/xrpl/currency-codes';
 import { useWallet } from '@/contexts/wallet-context';
+import { LocalWalletCard } from './components/local-wallet-card';
+import { WalletToolsGrid } from './components/wallet-tools-grid';
+import { WalletBalancesCard } from './components/wallet-balances-card';
+import {
+  MarketVaultManagementCard,
+  type AdminMarket,
+} from './components/market-vault-management-card';
 
 interface LendingConfig {
   issuerAddress: string;
@@ -43,9 +46,10 @@ export default function AdminPage() {
   const [config, setConfig] = useState<LendingConfig | null>(null);
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState<string>('');
-  const [credentialSubject, setCredentialSubject] = useState('');
-  const [credentialExpiration, setCredentialExpiration] = useState('');
-  const [credentialTxHash, setCredentialTxHash] = useState<string | null>(null);
+  const [markets, setMarkets] = useState<AdminMarket[]>([]);
+  const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
+  const [manualVaultId, setManualVaultId] = useState('');
+  const [manualMptIssuanceId, setManualMptIssuanceId] = useState('');
   const [trustlineEstablishing, setTrustlineEstablishing] = useState<Record<TokenCode, boolean>>({
     SAIL: false,
     NYRA: false,
@@ -79,6 +83,42 @@ export default function AdminPage() {
     [balances, config?.issuerAddress]
   );
 
+  const refreshMarkets = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setLoading('refresh-markets');
+    }
+
+    try {
+      const response = await fetch('/api/admin/markets');
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Failed to load markets');
+      }
+
+      const nextMarkets: AdminMarket[] = (payload.markets as Omit<AdminMarket, 'vaultStatus'>[]).map(
+        (market) => ({
+          ...market,
+          vaultStatus: !market.supplyVaultId ? 'missing' : market.vaultError ? 'error' : 'configured',
+        })
+      );
+
+      setMarkets(nextMarkets);
+      setSelectedMarketId((current) => {
+        if (!current) return current;
+        const exists = nextMarkets.some((market) => market.id === current);
+        return exists ? current : null;
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to refresh markets');
+    } finally {
+      if (!silent) {
+        setLoading('');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     async function init() {
       try {
@@ -94,25 +134,26 @@ export default function AdminPage() {
         if (payload.success) {
           setConfig({ issuerAddress: payload.data.issuerAddress });
         }
+
+        await refreshMarkets({ silent: true });
       } catch (error) {
         console.error('Admin init error:', error);
       }
     }
 
     init();
-  }, [refreshBalances]);
-
-  useEffect(() => {
-    if (wallet?.address) {
-      setCredentialSubject(wallet.address);
-    }
-  }, [wallet?.address]);
+  }, [refreshBalances, refreshMarkets]);
 
   const copyAddress = useCallback(() => {
     if (!wallet) return;
     navigator.clipboard.writeText(wallet.address);
     toast.success('Wallet address copied');
   }, [wallet]);
+
+  const copyText = useCallback((value: string, label: string) => {
+    navigator.clipboard.writeText(value);
+    toast.success(`${label} copied`);
+  }, []);
 
   const handleGenerateWallet = useCallback(async () => {
     setLoading('generate');
@@ -197,51 +238,84 @@ export default function AdminPage() {
     }
   }, [disconnect]);
 
-  const handleCreateCredential = useCallback(async () => {
-    if (!credentialSubject) {
-      toast.error('Subject address is required');
-      return;
-    }
-
-    const expirationUnixRaw = credentialExpiration
-      ? Math.floor(new Date(credentialExpiration).getTime() / 1000)
-      : null;
-
-    if (credentialExpiration && (expirationUnixRaw === null || !Number.isFinite(expirationUnixRaw) || expirationUnixRaw <= 0)) {
-      toast.error('Invalid expiration date');
-      return;
-    }
-
-    const expirationUnix = expirationUnixRaw ?? undefined;
-
-    setLoading('issue-credential');
-    setCredentialTxHash(null);
+  const handleCreateVault = useCallback(async (marketId: string) => {
+    setLoading(`create-vault-${marketId}`);
     try {
-      const response = await fetch('/api/credentials/create', {
+      const response = await fetch(`/api/admin/markets/${marketId}/vault`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ createLoanBroker: false }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Failed to create vault');
+      }
+
+      toast.success('New vault created and market mapping updated');
+      await refreshMarkets({ silent: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create vault');
+    } finally {
+      setLoading('');
+    }
+  }, [refreshMarkets]);
+
+  const handleSwapVault = useCallback(async (marketId: string) => {
+    const supplyVaultId = manualVaultId.trim();
+    const supplyMptIssuanceId = manualMptIssuanceId.trim();
+
+    if (!supplyVaultId || !supplyMptIssuanceId) {
+      toast.error('Vault ID and MPT Issuance ID are required');
+      return;
+    }
+
+    setLoading(`swap-vault-${marketId}`);
+    try {
+      const response = await fetch(`/api/admin/markets/${marketId}/vault`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subjectAddress: credentialSubject,
-          credentialType: 'KYC_VERIFIED',
-          ...(expirationUnix ? { expiration: expirationUnix } : {}),
+          supplyVaultId,
+          supplyMptIssuanceId,
         }),
       });
       const payload = await response.json();
 
-      if (!response.ok || !payload.success) {
-        toast.error(payload.error || 'Failed to create credential');
-        return;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Failed to swap vault');
       }
 
-      const txHash = payload.data?.txHash as string | undefined;
-      setCredentialTxHash(txHash ?? null);
-      toast.success('Credential created. Acceptance pending on subject wallet.');
+      toast.success('Market vault mapping updated');
+      await refreshMarkets({ silent: true });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create credential');
+      toast.error(error instanceof Error ? error.message : 'Failed to swap vault');
     } finally {
       setLoading('');
     }
-  }, [credentialExpiration, credentialSubject]);
+  }, [manualMptIssuanceId, manualVaultId, refreshMarkets]);
+
+  const handleToggleStatus = useCallback(async (marketId: string, currentStatus: boolean) => {
+    setLoading(`toggle-status-${marketId}`);
+    try {
+      const response = await fetch(`/api/admin/markets/${marketId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !currentStatus }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Failed to update market status');
+      }
+
+      toast.success(`Market ${currentStatus ? 'deactivated' : 'activated'}`);
+      await refreshMarkets({ silent: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update market status');
+    } finally {
+      setLoading('');
+    }
+  }, [refreshMarkets]);
 
   return (
     <div className="min-h-screen text-slate-100">
@@ -253,158 +327,48 @@ export default function AdminPage() {
           </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Wallet className="h-5 w-5" />
-              Current Local Wallet
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              {wallet ? (
-                <div className="flex flex-col gap-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="default">Loaded</Badge>
-                    <span className="font-mono">{wallet.address}</span>
-                    <button onClick={copyAddress} aria-label="Copy wallet address" className="text-slate-500 hover:text-slate-700">
-                      <Copy className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-500">Regenerate a new wallet only if you want to replace the saved one.</p>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-600">No wallet in localStorage yet.</p>
-              )}
-            </div>
+        <LocalWalletCard
+          wallet={wallet}
+          loading={loading}
+          onCopyAddress={copyAddress}
+          onClearLocalWallet={() => void handleClearLocalWallet()}
+        />
 
-            <div className="sm:shrink-0">
-              <Button
-                variant="destructive"
-                className="w-full sm:w-auto"
-                onClick={() => void handleClearLocalWallet()}
-                disabled={loading === 'clear-local-wallet'}
-              >
-                {loading === 'clear-local-wallet' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Clear Local Wallet
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <WalletToolsGrid
+          tokenList={TOKEN_LIST}
+          trustlineEstablishing={trustlineEstablishing}
+          trustLineStatusByToken={trustLineStatusByToken as Record<string, string | undefined>}
+          hasTrustLineByToken={hasTrustLineByToken as Record<string, boolean | undefined>}
+          loading={loading}
+          onGenerateWallet={() => void handleGenerateWallet()}
+        />
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            Token faucets are deprecated. You can now get RLUSD, SAIL, and NYRA from Wallet and Property purchase flows.
-          </div>
+        <WalletBalancesCard
+          walletConnected={Boolean(wallet)}
+          tokenList={TOKEN_LIST}
+          getBalance={getBalance as (symbol: string) => number}
+        />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Generate New Wallet</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-slate-600">Creates a fresh wallet, saves seed in localStorage, auto-funds XRP, and establishes SAIL/NYRA/RLUSD trust lines.</p>
-              <Button onClick={handleGenerateWallet} disabled={loading === 'generate'} className="w-full">
-                {loading === 'generate' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Generate + Fund
-              </Button>
-            </CardContent>
-          </Card>
-
-          {TOKEN_LIST.map((token) => (
-            <Card key={token}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  Faucet {token}
-                  {trustlineEstablishing[token] || trustLineStatusByToken[token] === 'checking' ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
-                  ) : (
-                    <span
-                      className={`inline-block h-2.5 w-2.5 rounded-full ${
-                        hasTrustLineByToken[token] ? 'bg-emerald-500' : 'bg-slate-300'
-                      }`}
-                      title={hasTrustLineByToken[token] ? `${token} trust line ready` : `${token} trust line missing`}
-                    />
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-slate-600">
-                  Deprecated. Use Wallet page for RLUSD and Property pages for SAIL/NYRA purchases.
-                </p>
-                <Button
-                  disabled
-                  className="w-full"
-                  variant="outline"
-                >
-                  Request {token} (Deprecated)
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Wallet Balances</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!wallet ? (
-              <p className="text-sm text-slate-600">Generate a wallet to view balances.</p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-lg bg-slate-100 p-3">
-                  <p className="text-xs text-slate-500">XRP</p>
-                  <p className="text-lg font-semibold text-slate-900">{getBalance('XRP').toFixed(4)}</p>
-                </div>
-                {TOKEN_LIST.map((token) => (
-                  <div key={token} className="rounded-lg bg-slate-100 p-3">
-                    <p className="text-xs text-slate-500">{token}</p>
-                    <p className="text-lg font-semibold text-slate-900">{getBalance(token).toFixed(4)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Issue Test Credential</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm text-slate-600">Subject Address</label>
-              <input
-                type="text"
-                value={credentialSubject}
-                onChange={(event) => setCredentialSubject(event.target.value)}
-                placeholder="r..."
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-slate-600">Expiration (optional)</label>
-              <input
-                type="datetime-local"
-                value={credentialExpiration}
-                onChange={(event) => setCredentialExpiration(event.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </div>
-
-            <Button onClick={() => void handleCreateCredential()} disabled={loading === 'issue-credential'}>
-              {loading === 'issue-credential' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Create Credential
-            </Button>
-
-            {credentialTxHash ? (
-              <p className="text-sm text-slate-600">
-                Created credential tx: <span className="font-mono">{credentialTxHash}</span>
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
+        <MarketVaultManagementCard
+          markets={markets}
+          selectedMarketId={selectedMarketId}
+          manualVaultId={manualVaultId}
+          manualMptIssuanceId={manualMptIssuanceId}
+          loading={loading}
+          onRefresh={() => void refreshMarkets()}
+          onSelectMarket={(market) => {
+            setSelectedMarketId(market.id);
+            setManualVaultId(market.supplyVaultId ?? '');
+            setManualMptIssuanceId(market.supplyMptIssuanceId ?? '');
+          }}
+          onDeselectMarket={() => setSelectedMarketId(null)}
+          onSetManualVaultId={setManualVaultId}
+          onSetManualMptIssuanceId={setManualMptIssuanceId}
+          onCreateVault={(marketId) => void handleCreateVault(marketId)}
+          onToggleStatus={(marketId, currentStatus) => void handleToggleStatus(marketId, currentStatus)}
+          onSwapVault={(marketId) => void handleSwapVault(marketId)}
+          onCopyText={copyText}
+        />
       </div>
     </div>
   );

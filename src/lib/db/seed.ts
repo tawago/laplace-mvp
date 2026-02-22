@@ -264,6 +264,27 @@ export async function getAllActiveMarkets() {
   }));
 }
 
+export async function getAllMarkets() {
+  const results = await db.query.markets.findMany();
+
+  return results.map((market) => ({
+    id: market.id,
+    name: market.name,
+    isActive: market.isActive,
+    collateralCurrency: market.collateralCurrency,
+    collateralIssuer: market.collateralIssuer,
+    debtCurrency: market.debtCurrency,
+    debtIssuer: market.debtIssuer,
+    supplyVaultId: market.supplyVaultId,
+    supplyMptIssuanceId: market.supplyMptIssuanceId,
+    loanBrokerId: market.loanBrokerId,
+    loanBrokerAddress: market.loanBrokerAddress,
+    vaultScale: market.vaultScale,
+    totalSupplied: parseFloat(market.totalSupplied),
+    totalBorrowed: parseFloat(market.totalBorrowed),
+  }));
+}
+
 /**
  * Get prices for a market
  */
@@ -331,6 +352,16 @@ export async function setMarketLoanBrokerConfig(
     .set({
       loanBrokerId: config.loanBrokerId,
       loanBrokerAddress: config.loanBrokerAddress,
+      updatedAt: new Date(),
+    })
+    .where(eq(markets.id, marketId));
+}
+
+export async function setMarketActiveStatus(marketId: string, isActive: boolean): Promise<void> {
+  await db
+    .update(markets)
+    .set({
+      isActive,
       updatedAt: new Date(),
     })
     .where(eq(markets.id, marketId));
