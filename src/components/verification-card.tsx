@@ -133,7 +133,7 @@ export function VerificationCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <FileCheck2 className="h-5 w-5" />
-          Demo Identity Verification
+          Identity Verification
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
