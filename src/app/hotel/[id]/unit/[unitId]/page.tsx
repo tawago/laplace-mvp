@@ -39,12 +39,15 @@ import { OnrampDialog } from '@/components/onramp-dialog';
 import { toast } from 'sonner';
 import { useWallet } from '@/contexts/wallet-context';
 import { loadWalletSeed } from '@/lib/client/wallet-storage';
+import { useMarketPrices } from '@/contexts/market-prices-context';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function UnitDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const { address, rlusdBalance, hasRlusdTrustLine, refreshBalances } = useWallet();
+  const { isLoading: isPricesLoading, hasPriceForHotel, getTokenPrice } = useMarketPrices();
   const hotel = hotels.find(h => h.id === params.id);
   const unit = hotel?.units.find(u => u.id === params.unitId);
   
@@ -87,7 +90,8 @@ export default function UnitDetailPage() {
     return <div>Unit not found</div>;
   }
 
-  const tokenPrice = hotel.tokenPrice;
+  const tokenPrice = getTokenPrice(hotel.id, hotel.tokenPrice);
+  const showTokenPriceSkeleton = isPricesLoading && !hasPriceForHotel(hotel.id);
   const investmentAmount = tokenAmount * tokenPrice;
   const annualReturn = investmentAmount * (hotel.roiPercentage / 100);
   const totalReturns = annualReturn * investmentYears;
@@ -200,7 +204,11 @@ export default function UnitDetailPage() {
                   <div className="flex items-center justify-between rounded-lg bg-white/50 p-4 dark:bg-zinc-900/50">
                     <div>
                       <p className="text-sm text-zinc-600 dark:text-zinc-400">Token Price</p>
-                      <p className="text-xl font-bold">${tokenPrice}</p>
+                      {showTokenPriceSkeleton ? (
+                        <Skeleton className="mt-1 h-7 w-24" />
+                      ) : (
+                        <p className="text-xl font-bold">${tokenPrice}</p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-zinc-600 dark:text-zinc-400">Available</p>
@@ -467,9 +475,13 @@ export default function UnitDetailPage() {
                     <div>
                       <p className="text-sm text-zinc-500">Token Information</p>
                       <p className="font-medium">{unit.totalTokens.toLocaleString()} total tokens</p>
-                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                        ${tokenPrice} per token
-                      </p>
+                      {showTokenPriceSkeleton ? (
+                        <Skeleton className="mt-1 h-5 w-32" />
+                      ) : (
+                        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                          ${tokenPrice} per token
+                        </p>
+                      )}
                     </div>
 
                     <div>

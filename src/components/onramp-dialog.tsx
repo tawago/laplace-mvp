@@ -70,6 +70,7 @@ export function OnrampDialog({
 
   const [step, setStep] = useState<Step>('amount');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
+  const [amountInput, setAmountInput] = useState(defaultAmount.toString());
   const [amount, setAmount] = useState(defaultAmount);
   const [processingStep, setProcessingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -82,10 +83,12 @@ export function OnrampDialog({
       setProcessingStep(0);
       setErrorMessage(null);
       setTxHash(null);
+      setAmountInput(defaultAmount.toString());
       setAmount(defaultAmount);
       return;
     }
 
+    setAmountInput(defaultAmount.toString());
     setAmount(defaultAmount);
   }, [defaultAmount, open]);
 
@@ -103,11 +106,18 @@ export function OnrampDialog({
       return;
     }
 
-    if (amount < minimumAmount) {
+    const parsedAmount = Number.parseFloat(amountInput);
+    if (!Number.isFinite(parsedAmount)) {
+      setErrorMessage('Enter a valid top-up amount.');
+      return;
+    }
+
+    if (parsedAmount < minimumAmount) {
       setErrorMessage(`Minimum top-up is ${minimumAmount.toFixed(2)} RLUSD.`);
       return;
     }
 
+    setAmount(parsedAmount);
     setErrorMessage(null);
     setStep('payment');
   };
@@ -179,8 +189,8 @@ export function OnrampDialog({
                   type="number"
                   min={minimumAmount}
                   step="0.01"
-                  value={amount}
-                  onChange={(event) => setAmount(Number.parseFloat(event.target.value) || 0)}
+                  value={amountInput}
+                  onChange={(event) => setAmountInput(event.target.value)}
                   className="w-full rounded-md border bg-white px-4 py-3 text-lg font-semibold dark:bg-zinc-950"
                 />
                 <p className="text-xs text-zinc-500">Minimum: {minimumAmount.toFixed(2)} RLUSD</p>

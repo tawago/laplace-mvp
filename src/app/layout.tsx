@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/auth-context";
 import { WalletProvider } from "@/contexts/wallet-context";
 import { CredentialsProvider } from '@/contexts/credentials-context';
+import { MarketPricesProvider } from '@/contexts/market-prices-context';
 import "./globals.css";
 
 const geistSans = Geist({
@@ -43,10 +44,12 @@ export default function RootLayout({
           <AuthProvider>
             <WalletProvider>
               <CredentialsProvider>
-                <Header />
-                <main className="min-h-[calc(100vh-4rem)]">{children}</main>
-                <Footer />
-                <Toaster />
+                <MarketPricesProvider>
+                  <Header />
+                  <main className="min-h-[calc(100vh-4rem)]">{children}</main>
+                  <Footer />
+                  <Toaster />
+                </MarketPricesProvider>
               </CredentialsProvider>
             </WalletProvider>
           </AuthProvider>

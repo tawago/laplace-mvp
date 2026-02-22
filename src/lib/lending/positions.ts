@@ -266,67 +266,6 @@ export async function removeCollateral(positionId: string, amount: number): Prom
 }
 
 /**
- * Add to loan principal (borrow)
- */
-export async function addLoanPrincipal(positionId: string, amount: number): Promise<Position> {
-  let position = await getPositionById(positionId);
-  if (!position) {
-    throw new Error('Position not found');
-  }
-
-  position = await accrueInterest(position);
-
-  const newPrincipal = position.loanPrincipal + amount;
-
-  await db
-    .update(positions)
-    .set({
-      loanPrincipal: newPrincipal.toString(),
-      lastInterestUpdate: new Date(),
-    })
-    .where(eq(positions.id, positionId));
-
-  return {
-    ...position,
-    loanPrincipal: newPrincipal,
-  };
-}
-
-/**
- * Apply repayment to position (interest first, then principal)
- */
-export async function applyRepayment(
-  positionId: string,
-  interestPaid: number,
-  principalPaid: number
-): Promise<Position> {
-  let position = await getPositionById(positionId);
-  if (!position) {
-    throw new Error('Position not found');
-  }
-
-  position = await accrueInterest(position);
-
-  const newInterest = Math.max(0, position.interestAccrued - interestPaid);
-  const newPrincipal = Math.max(0, position.loanPrincipal - principalPaid);
-
-  await db
-    .update(positions)
-    .set({
-      interestAccrued: newInterest.toString(),
-      loanPrincipal: newPrincipal.toString(),
-      lastInterestUpdate: new Date(),
-    })
-    .where(eq(positions.id, positionId));
-
-  return {
-    ...position,
-    interestAccrued: newInterest,
-    loanPrincipal: newPrincipal,
-  };
-}
-
-/**
  * Close a position (when fully repaid and no collateral)
  */
 export async function closePosition(positionId: string): Promise<Position> {

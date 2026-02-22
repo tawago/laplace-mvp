@@ -7,10 +7,10 @@ import { ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { InstitutionalUnderwriting } from './components/institutional-underwriting';
-import { PoolOverviewCard } from './components/pool-overview-card';
-import { SupplyActionsCard } from './components/supply-actions-card';
-import { SupplyPositionCard } from './components/supply-position-card';
+import { LendMarketActionsCard } from './components/lend-market-actions-card';
+import { LendPositionBalanceCard } from './components/lend-position-balance-card';
 import { SupplierActivityCard } from './components/supplier-activity-card';
+import { YieldEstimatorCard } from './components/yield-estimator-card';
 import type {
   LendingConfig,
   MarketConfig,
@@ -22,6 +22,7 @@ import type {
 
 import {
   checkTrustLine,
+  getBalances,
   getVaultShareBalance,
   getWalletFromSeed,
   submitVaultDeposit,
@@ -30,7 +31,7 @@ import {
   type WalletInfo,
 } from '@/lib/client/xrpl';
 import { loadWalletSeed } from '@/lib/client/wallet-storage';
-import { getTokenSymbol } from '@/lib/xrpl/currency-codes';
+import { getTokenSymbol, normalizeCurrencyCode } from '@/lib/xrpl/currency-codes';
 
 function formatAmount(value: number, decimals = 2): string {
   return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: decimals }) : '0';
@@ -58,6 +59,7 @@ export default function LenderPage() {
   const [position, setPosition] = useState<SupplyPosition | null>(null);
   const [positionMetrics, setPositionMetrics] = useState<SupplyPositionMetrics | null>(null);
   const [shareBalance, setShareBalance] = useState('0');
+  const [walletBalance, setWalletBalance] = useState(0);
   const [events, setEvents] = useState<SupplierEvent[]>([]);
   const [poolLoading, setPoolLoading] = useState(false);
   const [positionLoading, setPositionLoading] = useState(false);
@@ -70,8 +72,8 @@ export default function LenderPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [networkPendingCount, setNetworkPendingCount] = useState(0);
 
-  const [supplyAmount, setSupplyAmount] = useState('25');
-  const [withdrawAmount, setWithdrawAmount] = useState('10');
+  const [supplyAmount, setSupplyAmount] = useState('1000');
+  const [withdrawAmount, setWithdrawAmount] = useState('1000');
   const showGlobalLoading = networkPendingCount > 0;
 
   const beginNetworkRequest = useCallback(() => {
@@ -123,6 +125,7 @@ export default function LenderPage() {
       setPosition(null);
       setPositionMetrics(null);
       setShareBalance('0');
+      setWalletBalance(0);
       setPositionLoading(false);
       setPositionHydrated(true);
       return;
@@ -131,6 +134,21 @@ export default function LenderPage() {
     setPositionLoading(true);
     setPositionHydrated(false);
     try {
+      try {
+        const balances = await withNetworkLoading(() => getBalances(wallet.address));
+        const marketCurrency = normalizeCurrencyCode(selectedMarket?.debtCurrency ?? '');
+        const walletTokenBalance = balances.find((tokenBalance) => {
+          const sameCurrency = normalizeCurrencyCode(tokenBalance.currency) === marketCurrency;
+          const sameIssuer = !selectedMarket?.debtIssuer || tokenBalance.issuer === selectedMarket.debtIssuer;
+          return sameCurrency && sameIssuer;
+        });
+
+        const parsedWalletBalance = Number(walletTokenBalance?.value ?? '0');
+        setWalletBalance(Number.isFinite(parsedWalletBalance) ? parsedWalletBalance : 0);
+      } catch {
+        setWalletBalance(0);
+      }
+
       const response = await withNetworkLoading(() =>
         fetch(`/api/lending/markets/${selectedMarketId}/supply-positions/${wallet.address}`)
       );
@@ -168,7 +186,14 @@ export default function LenderPage() {
       setPositionLoading(false);
       setPositionHydrated(true);
     }
-  }, [selectedMarket?.supplyMptIssuanceId, selectedMarketId, wallet?.address, withNetworkLoading]);
+  }, [
+    selectedMarket?.debtCurrency,
+    selectedMarket?.debtIssuer,
+    selectedMarket?.supplyMptIssuanceId,
+    selectedMarketId,
+    wallet?.address,
+    withNetworkLoading,
+  ]);
 
   const refreshEvents = useCallback(async () => {
     if (!wallet?.address || !selectedMarketId) {
@@ -535,31 +560,12 @@ export default function LenderPage() {
           <TabsContent value="market-action" className="space-y-6">
             {selectedMarket ? (
               <>
-                <div className="grid gap-6 md:grid-cols-2">
-                  <PoolOverviewCard
-                    isLoading={poolLoading || (!poolHydrated && Boolean(selectedMarketId))}
-                    pool={pool}
-                    market={selectedMarket}
-                    formatAmount={formatAmount}
-                    formatPercent={formatPercent}
-                  />
-                  <SupplyPositionCard
-                    isLoading={
-                      positionLoading || (!positionHydrated && walletReady && Boolean(wallet?.address && selectedMarketId))
-                    }
-                    walletReady={walletReady}
-                    walletReadyChecked={walletReadyChecked}
-                    market={selectedMarket}
-                    position={position}
-                    positionMetrics={positionMetrics}
-                    shareBalance={shareBalance}
-                    formatAmount={formatAmount}
-                    normalizeShares={normalizeShares}
-                  />
-                </div>
-
-                <SupplyActionsCard
+                <LendMarketActionsCard
                   market={selectedMarket}
+                  pool={pool}
+                  position={position}
+                  positionMetrics={positionMetrics}
+                  isLoading={poolLoading || (!poolHydrated && Boolean(selectedMarketId))}
                   walletReady={walletReady}
                   walletReadyChecked={walletReadyChecked}
                   loadingAction={loadingAction}
@@ -567,14 +573,43 @@ export default function LenderPage() {
                   setSupplyAmount={setSupplyAmount}
                   withdrawAmount={withdrawAmount}
                   setWithdrawAmount={setWithdrawAmount}
-                  position={position}
-                  pool={pool}
-                  positionMetrics={positionMetrics}
                   formatAmount={formatAmount}
+                  formatPercent={formatPercent}
                   onSupply={handleSupply}
                   onWithdrawSupply={handleWithdrawSupply}
                   onWithdrawAll={handleWithdrawAll}
                 />
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <LendPositionBalanceCard
+                    market={selectedMarket}
+                    position={position}
+                    positionMetrics={positionMetrics}
+                    totalSupplied={pool?.totalSupplied ?? 0}
+                    walletBalance={walletBalance}
+                    shareBalance={shareBalance}
+                    isLoading={
+                      positionLoading || (!positionHydrated && walletReady && Boolean(wallet?.address && selectedMarketId))
+                    }
+                    walletReady={walletReady}
+                    walletReadyChecked={walletReadyChecked}
+                    formatAmount={formatAmount}
+                    normalizeShares={normalizeShares}
+                  />
+
+                  <YieldEstimatorCard
+                    market={selectedMarket}
+                    pool={pool}
+                    position={position}
+                    positionMetrics={positionMetrics}
+                    isLoading={
+                      poolLoading || positionLoading || (!poolHydrated && Boolean(selectedMarketId)) ||
+                      (!positionHydrated && walletReady && Boolean(wallet?.address && selectedMarketId))
+                    }
+                    formatAmount={formatAmount}
+                    formatPercent={formatPercent}
+                  />
+                </div>
 
                 <SupplierActivityCard
                   isLoading={eventsLoading || (!eventsHydrated && walletReady && Boolean(wallet?.address && selectedMarketId))}

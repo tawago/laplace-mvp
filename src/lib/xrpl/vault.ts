@@ -118,6 +118,11 @@ export interface SupplierShareBalance {
   shares: string;
 }
 
+export interface MptIssuanceInfo {
+  outstandingAmount: string;
+  assetScale: number | null;
+}
+
 export async function checkVaultSupport(client: Client): Promise<VaultSupportResult> {
   return cached({
     key: xrplCacheKeys.vaultSupport(),
@@ -280,4 +285,44 @@ export async function getSupplierShareBalance(
   return {
     shares: toDecimalString(balance),
   };
+}
+
+export async function getMptIssuanceInfo(
+  client: Client,
+  mptIssuanceId: string
+): Promise<MptIssuanceInfo | null> {
+  return cached({
+    key: `mpt-issuance:${mptIssuanceId}`,
+    ttlMs: 5_000,
+    staleTtlMs: 10_000,
+    tags: ['mpt-issuance', `mpt-issuance:${mptIssuanceId}`],
+    loader: async () => {
+      try {
+        const response = (await client.request({
+          command: 'ledger_entry',
+          mpt_issuance: mptIssuanceId,
+        } as never)) as MaybeRecord;
+
+        const entry = isRecord(response.result) ? response.result.node : undefined;
+        if (!isRecord(entry)) {
+          return null;
+        }
+
+        const outstandingAmount = toDecimalString(
+          findValueByKey(entry, ['OutstandingAmount', 'outstanding_amount']) ?? '0'
+        );
+        const rawAssetScale = findValueByKey(entry, ['AssetScale', 'asset_scale']);
+        const assetScale = typeof rawAssetScale === 'number' && Number.isInteger(rawAssetScale)
+          ? rawAssetScale
+          : null;
+
+        return {
+          outstandingAmount,
+          assetScale,
+        };
+      } catch {
+        return null;
+      }
+    },
+  });
 }

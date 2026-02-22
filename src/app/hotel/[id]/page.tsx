@@ -28,12 +28,15 @@ import Link from 'next/link';
 import { hotels } from '@/data/hotels';
 import { HotelUnit } from '@/types/hotel';
 import { loadWalletSeed } from '@/lib/client/wallet-storage';
+import { useMarketPrices } from '@/contexts/market-prices-context';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function HotelPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const { address, rlusdBalance, hasRlusdTrustLine, refreshBalances } = useWallet();
+  const { isLoading: isPricesLoading, hasPriceForHotel, getTokenPrice } = useMarketPrices();
   const hotel = hotels.find(h => h.id === params.id);
   
   const [selectedUnit, setSelectedUnit] = useState<HotelUnit | null>(null);
@@ -114,7 +117,8 @@ export default function HotelPage() {
     router.push('/portfolio');
   };
 
-  const subtotal = selectedUnit ? tokenAmount * hotel.tokenPrice : 0;
+  const tokenPrice = getTokenPrice(hotel.id, hotel.tokenPrice);
+  const subtotal = selectedUnit ? tokenAmount * tokenPrice : 0;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
@@ -150,7 +154,11 @@ export default function HotelPage() {
             </div>
             <div>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">Token Price</p>
-              <p className="text-lg font-bold">${hotel.tokenPrice}</p>
+              {isPricesLoading && !hasPriceForHotel(hotel.id) ? (
+                <Skeleton className="mt-1 h-5 w-20" />
+              ) : (
+                <p className="text-lg font-bold">${tokenPrice}</p>
+              )}
             </div>
             <div>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">Available Units</p>
@@ -358,7 +366,7 @@ export default function HotelPage() {
           tokenAmount={tokenAmount}
           maxTokenAmount={selectedUnit.availableTokens}
           onTokenAmountChange={setTokenAmount}
-          tokenPrice={hotel.tokenPrice}
+          tokenPrice={tokenPrice}
           totalPrice={subtotal}
           roiPercentage={hotel.roiPercentage}
           rlusdBalance={rlusdBalance}

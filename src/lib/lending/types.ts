@@ -91,6 +91,8 @@ export interface PoolMetrics {
   marketId: string;
   totalSupplied: number;
   totalBorrowed: number;
+  totalCollateralLocked?: number;
+  totalShares?: number;
   availableLiquidity: number;
   utilizationRate: number;
   borrowApr: number;

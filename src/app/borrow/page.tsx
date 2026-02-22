@@ -35,6 +35,7 @@ import { loadWalletSeed } from '@/lib/client/wallet-storage';
 import { getTokenCode, getTokenSymbol } from '@/lib/xrpl/currency-codes';
 
 const REPAY_BUFFER_RATE = 0.002;
+const FULL_REPAY_BUFFER_RATE = 0.0001;
 const REPAY_DECIMALS = 6;
 
 function roundUpAmount(value: number, decimals: number): number {
@@ -42,8 +43,8 @@ function roundUpAmount(value: number, decimals: number): number {
   return Math.ceil(value * factor) / factor;
 }
 
-function withRepayBuffer(baseAmount: number): number {
-  const buffered = baseAmount * (1 + REPAY_BUFFER_RATE);
+function withRepayBuffer(baseAmount: number, bufferRate: number = REPAY_BUFFER_RATE): number {
+  const buffered = baseAmount * (1 + bufferRate);
   return roundUpAmount(buffered, REPAY_DECIMALS);
 }
 
@@ -69,7 +70,7 @@ export default function LendingPage() {
   const [borrowAmount, setBorrowAmount] = useState('50');
   const [repayAmount, setRepayAmount] = useState('0');
   const [repayKind, setRepayKind] = useState<RepayKind>('regular');
-  const [withdrawAmount, setWithdrawAmount] = useState('10');
+  const [withdrawAmount, setWithdrawAmount] = useState('100');
 
   const selectedMarket = useMemo(
     () => config?.markets.find((market) => market.id === selectedMarketId) ?? null,
@@ -383,16 +384,19 @@ export default function LendingPage() {
       setRepayKind(kind);
       const baseAmount =
         kind === 'full'
-          ? loanRepayment?.fullRepayment ?? loanRepayment?.minimumRepayment
+          ? metrics?.totalDebt ?? loanRepayment?.minimumRepayment
           : kind === 'overpayment'
           ? loanRepayment?.suggestedOverpayment
           : loanRepayment?.minimumRepayment;
       if (typeof baseAmount === 'number' && Number.isFinite(baseAmount) && baseAmount > 0) {
-        const bufferedAmount = kind === 'full' ? roundUpAmount(baseAmount, REPAY_DECIMALS) : withRepayBuffer(baseAmount);
+        const bufferedAmount =
+          kind === 'full'
+            ? withRepayBuffer(baseAmount, FULL_REPAY_BUFFER_RATE)
+            : withRepayBuffer(baseAmount);
         setRepayAmount(bufferedAmount.toFixed(REPAY_DECIMALS));
       }
     },
-    [loanRepayment]
+    [loanRepayment, metrics?.totalDebt]
   );
 
   const handleWithdraw = useCallback(async () => {
@@ -493,6 +497,7 @@ export default function LendingPage() {
                 loading={loading}
                 collateralTrustlineReady={collateralTrustlineReady}
                 debtTrustlineReady={debtTrustlineReady}
+                poolLoading={Boolean(wallet?.address && selectedMarketId) && (positionLoading || !positionHydrated)}
                 metrics={metrics}
                 loanRepayment={loanRepayment}
                 repayBufferRate={REPAY_BUFFER_RATE}

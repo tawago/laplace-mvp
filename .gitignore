@@ -42,5 +42,6 @@ next-env.d.ts
 
 certificates
 
+scripts/sync-vercel-env.ts
 CLAUDE.md
 AGENTS.md

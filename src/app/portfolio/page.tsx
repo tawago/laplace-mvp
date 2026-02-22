@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   TrendingUp, 
   Wallet, 
@@ -22,6 +23,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { useWallet } from '@/contexts/wallet-context';
 import { toast } from 'sonner';
 import { AuthGuard } from '@/components/auth-guard';
+import { PortfolioOverviewCard } from '@/components/portfolio-overview-card';
 
 interface PortfolioHolding extends TokenPurchase {
   currentValue: number;
@@ -29,6 +31,7 @@ interface PortfolioHolding extends TokenPurchase {
 
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<PortfolioHolding[]>([]);
+  const [isPortfolioLoading, setIsPortfolioLoading] = useState(true);
   const { user } = useAuth();
   const { address } = useWallet();
   
@@ -36,10 +39,12 @@ export default function PortfolioPage() {
     const activeAddress = address ?? user?.wallet.address;
     if (!activeAddress) {
       setPortfolio([]);
+      setIsPortfolioLoading(false);
       return;
     }
 
     const loadPortfolio = async () => {
+      setIsPortfolioLoading(true);
       try {
         const response = await fetch(`/api/portfolio?address=${activeAddress}`);
         const payload = await response.json();
@@ -55,6 +60,8 @@ export default function PortfolioPage() {
         setPortfolio(next);
       } catch {
         setPortfolio([]);
+      } finally {
+        setIsPortfolioLoading(false);
       }
     };
 
@@ -123,78 +130,56 @@ export default function PortfolioPage() {
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         {/* Portfolio Overview Cards */}
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">Total Invested</p>
-                  <p className="mt-1 text-2xl font-bold">${totalInvested.toLocaleString()}</p>
-                </div>
-                <div className="rounded-lg bg-blue-100 p-3 dark:bg-blue-900/20">
-                  <DollarSign className="h-6 w-6 text-blue-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <PortfolioOverviewCard
+            label="Total Invested"
+            value={`$${totalInvested.toLocaleString()}`}
+            icon={DollarSign}
+            iconTone="blue"
+            isLoading={isPortfolioLoading}
+          />
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">Current Value</p>
-                  <p className="mt-1 text-2xl font-bold">${currentValue.toLocaleString()}</p>
-                  <p
-                    className={`mt-1 flex items-center text-xs ${
-                      totalGain > 0 ? 'text-emerald-600' : totalGain < 0 ? 'text-red-600' : 'text-zinc-500'
-                    }`}
-                  >
-                    {totalGain > 0 ? (
-                      <ArrowUpRight className="mr-1 h-3 w-3" />
-                    ) : totalGain < 0 ? (
-                      <ArrowDownRight className="mr-1 h-3 w-3" />
-                    ) : (
-                      <ArrowRight className="mr-1 h-3 w-3" />
-                    )}
-                    {totalGain > 0 ? '+' : ''}
-                    {totalGainPercentage.toFixed(1)}%
-                  </p>
-                </div>
-                <div className="rounded-lg bg-emerald-100 p-3 dark:bg-emerald-900/20">
-                  <TrendingUp className="h-6 w-6 text-emerald-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <PortfolioOverviewCard
+            label="Current Value"
+            value={`$${currentValue.toLocaleString()}`}
+            icon={TrendingUp}
+            iconTone="green"
+            isLoading={isPortfolioLoading}
+            meta={
+              <p
+                className={`mt-1 flex items-center text-xs ${
+                  totalGain > 0 ? 'text-emerald-600' : totalGain < 0 ? 'text-red-600' : 'text-zinc-500'
+                }`}
+              >
+                {totalGain > 0 ? (
+                  <ArrowUpRight className="mr-1 h-3 w-3" />
+                ) : totalGain < 0 ? (
+                  <ArrowDownRight className="mr-1 h-3 w-3" />
+                ) : (
+                  <ArrowRight className="mr-1 h-3 w-3" />
+                )}
+                {totalGain > 0 ? '+' : ''}
+                {totalGainPercentage.toFixed(1)}%
+              </p>
+            }
+          />
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">Est. Annual Return</p>
-                  <p className="mt-1 text-2xl font-bold">${estimatedAnnualReturn.toFixed(0)}</p>
-                  <p className="mt-1 text-xs text-zinc-500">8% p.a.</p>
-                </div>
-                <div className="rounded-lg bg-purple-100 p-3 dark:bg-purple-900/20">
-                  <Calendar className="h-6 w-6 text-purple-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <PortfolioOverviewCard
+            label="Est. Annual Return"
+            value={`$${estimatedAnnualReturn.toFixed(0)}`}
+            icon={Calendar}
+            iconTone="purple"
+            isLoading={isPortfolioLoading}
+            meta={<p className="mt-1 text-xs text-zinc-500">8% p.a.</p>}
+          />
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">Total Tokens</p>
-                  <p className="mt-1 text-2xl font-bold">{totalTokens.toLocaleString()}</p>
-                  <p className="mt-1 text-xs text-zinc-500">2 properties</p>
-                </div>
-                <div className="rounded-lg bg-orange-100 p-3 dark:bg-orange-900/20">
-                  <Wallet className="h-6 w-6 text-orange-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <PortfolioOverviewCard
+            label="Total Tokens"
+            value={totalTokens.toLocaleString()}
+            icon={Wallet}
+            iconTone="orange"
+            isLoading={isPortfolioLoading}
+            meta={<p className="mt-1 text-xs text-zinc-500">{portfolio.length} properties</p>}
+          />
         </div>
 
         {/* Holdings Table */}
@@ -216,6 +201,26 @@ export default function PortfolioPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
+                  {isPortfolioLoading && (
+                    Array.from({ length: 3 }).map((_, index) => (
+                      <tr key={`skeleton-${index}`} className="text-sm">
+                        <td className="py-4">
+                          <div className="flex items-center gap-3">
+                            <Skeleton className="h-10 w-10 rounded-lg" />
+                            <div>
+                              <Skeleton className="h-4 w-40" />
+                              <Skeleton className="mt-2 h-3 w-28" />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4"><Skeleton className="h-4 w-24" /></td>
+                        <td className="py-4"><Skeleton className="h-4 w-16" /></td>
+                        <td className="py-4"><Skeleton className="h-4 w-20" /></td>
+                        <td className="py-4"><Skeleton className="h-4 w-24" /></td>
+                        <td className="py-4"><Skeleton className="h-8 w-20" /></td>
+                      </tr>
+                    ))
+                  )}
                   {portfolio.map((purchase) => {
                     const gain = purchase.currentValue - purchase.totalPrice;
                     const gainPercentage = (gain / purchase.totalPrice) * 100;
@@ -272,7 +277,7 @@ export default function PortfolioPage() {
               </table>
             </div>
 
-            {portfolio.length === 0 && (
+            {!isPortfolioLoading && portfolio.length === 0 && (
               <div className="py-12 text-center">
                 <Building2 className="mx-auto h-12 w-12 text-zinc-400" />
                 <h3 className="mt-4 text-lg font-medium">No investments yet</h3>

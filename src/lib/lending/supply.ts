@@ -130,30 +130,6 @@ export function accrueSupplyYield(position: SupplyPosition, globalYieldIndex: nu
   return calculateAccruedSupplyYield(position.supplyAmount, globalYieldIndex, position.yieldIndex);
 }
 
-export async function checkpointSupplyYield(
-  positionId: string,
-  globalYieldIndex: number,
-  database: DbClient = db
-): Promise<SupplyPosition> {
-  const now = new Date();
-
-  const [updated] = await database
-    .update(supplyPositions)
-    .set({
-      yieldIndex: toIndexValue(globalYieldIndex).toString(),
-      lastYieldUpdate: now,
-      updatedAt: now,
-    })
-    .where(eq(supplyPositions.id, positionId))
-    .returning();
-
-  if (!updated) {
-    throw new Error('Supply position not found');
-  }
-
-  return dbToSupplyPosition(updated);
-}
-
 export async function addSupply(
   positionId: string,
   amount: number,

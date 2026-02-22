@@ -15,10 +15,13 @@ import {
 } from 'lucide-react';
 import { hotels } from '@/data/hotels';
 import { HotelImage } from '@/components/hotel-image';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useMarketPrices } from '@/contexts/market-prices-context';
 
 export default function DiscoverPage() {
   const [selectedROI, setSelectedROI] = useState<string>('all');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const { isLoading, hasPriceForHotel, getTokenPrice } = useMarketPrices();
 
   const filteredHotels = hotels.filter(hotel => {
     if (selectedROI !== 'all') {
@@ -103,6 +106,8 @@ export default function DiscoverPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredHotels.map((hotel) => {
             const soldPercentage = ((hotel.totalUnits - hotel.availableUnits) / hotel.totalUnits) * 100;
+            const displayTokenPrice = getTokenPrice(hotel.id, hotel.tokenPrice);
+            const showTokenPriceSkeleton = isLoading && !hasPriceForHotel(hotel.id);
             
             return (
               <Card key={hotel.id} className="group overflow-hidden transition-all hover:shadow-xl">
@@ -139,7 +144,11 @@ export default function DiscoverPage() {
                     </div>
                     <div>
                       <p className="text-zinc-500">Token Price</p>
-                      <p className="font-semibold">${hotel.tokenPrice}</p>
+                      {showTokenPriceSkeleton ? (
+                        <Skeleton className="mt-1 h-3 w-10" />
+                      ) : (
+                        <p className="font-semibold">${displayTokenPrice}</p>
+                      )}
                     </div>
                   </div>
 

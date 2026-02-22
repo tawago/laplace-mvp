@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
 
@@ -17,6 +18,7 @@ interface MarketActionsCardProps {
   loading: string;
   collateralTrustlineReady: boolean;
   debtTrustlineReady: boolean;
+  poolLoading: boolean;
   metrics: PositionMetrics | null;
   loanRepayment: LoanRepaymentOverview | null;
   repayBufferRate: number;
@@ -42,6 +44,7 @@ export function MarketActionsCard({
   loading,
   collateralTrustlineReady,
   debtTrustlineReady,
+  poolLoading,
   metrics,
   loanRepayment,
   repayBufferRate,
@@ -91,9 +94,11 @@ export function MarketActionsCard({
       <CardContent className="min-h-60">
         <div className="flex flex-col lg:flex-row justify-between">
           <section className="flex-1 space-y-4 pr-10">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
               <h2 className="text-lg font-semibold">Market</h2>
-              <Badge variant="outline">{(market.baseInterestRate * 100).toFixed(2)}% APR</Badge>
+              <Badge variant="outline" className="shadow-xs shadow-amber-400/50">
+                {(market.baseInterestRate * 100).toFixed(2)}% APR
+              </Badge>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -115,9 +120,13 @@ export function MarketActionsCard({
               </div>
               <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <p className="text-xs uppercase tracking-wide text-zinc-500">Liquidity Pool</p>
-                <p className="mt-1 font-semibold">
-                  {poolSize.toFixed(2)} {debtSymbol}
-                </p>
+                {poolLoading ? (
+                  <Skeleton className="mt-1 h-5 w-28" />
+                ) : (
+                  <p className="mt-1 font-semibold">
+                    {poolSize.toFixed(2)} {debtSymbol}
+                  </p>
+                )}
               </div>
               <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                 <p className="text-xs uppercase tracking-wide text-zinc-500">Loan Period</p>
@@ -150,7 +159,8 @@ export function MarketActionsCard({
                     </p>
                   )}
                   <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    Estimated max borrow from this deposit: {depositBasedBorrowCapacity.toFixed(0)} {debtSymbol}
+                    Estimated max borrow from this deposit: 
+                    <span className="text-amber-400"> {depositBasedBorrowCapacity.toFixed(0)} {debtSymbol}</span>
                     <span className="ml-1 text-zinc-500 dark:text-zinc-500">
                       ({safeDepositAmount.toFixed(0)} {collateralSymbol} x {(market.maxLtvRatio * 100).toFixed(0)}% max LTV)
                     </span>
@@ -210,7 +220,7 @@ export function MarketActionsCard({
                     </Button>
                   </div>
                   <p className="text-xs text-zinc-600 dark:text-zinc-400 flex flex-col">
-                    <span>Interest rate: {(market.baseInterestRate * 100).toFixed(2)}% APR</span>
+                    <span className="text-amber-400">Interest rate: {(market.baseInterestRate * 100).toFixed(2)}% APR</span>
                     <span>Loan period: {market.loanTermMonths} months </span>
                     <span>Estimated total repayment: {projectedRepayment.totalRepayment.toFixed(4)} {debtSymbol} </span>
                   </p>
