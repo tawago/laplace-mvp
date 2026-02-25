@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { getAllMarkets } from '@/lib/db/seed';
+import { getAllMarkets } from '@/lib/lending/data/markets';
 import { getClient } from '@/lib/xrpl/client';
 import { getSupplyVaultInfo } from '@/lib/xrpl/vault';
 

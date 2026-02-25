@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { getMarketById } from '@/lib/db/seed';
+import { getMarketById } from '@/lib/lending/data/markets';
 import { getPoolMetrics, updateGlobalYieldIndex } from '@/lib/lending';
 
 interface RouteContext {

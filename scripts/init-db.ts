@@ -47,14 +47,14 @@ if (!process.env.BACKEND_WALLET_SEED) {
 }
 
 async function main() {
+  const { seedMarket } = await import('../src/lib/db/bootstrap/markets');
   const {
-    seedMarket,
     getMarketByName,
-    getMarketPrices,
     getAllActiveMarkets,
     setMarketSupplyVaultConfig,
     setMarketLoanBrokerConfig,
-  } = await import('../src/lib/db/seed');
+  } = await import('../src/lib/lending/data/markets');
+  const { getMarketPrices } = await import('../src/lib/lending/data/prices');
   const { getBackendWallet, getLoanBrokerWallet } = await import('../src/lib/xrpl/wallet');
   const { getClient, disconnectClient } = await import('../src/lib/xrpl/client');
   const { checkVaultSupport, createSupplyVault } = await import('../src/lib/xrpl/vault');

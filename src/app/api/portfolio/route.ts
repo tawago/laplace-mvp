@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { and, desc, eq } from 'drizzle-orm';
 import { db, purchaseOrders } from '@/lib/db';
-import { getAllActiveMarkets, getMarketPrices } from '@/lib/db/seed';
+import { getAllActiveMarkets } from '@/lib/lending/data/markets';
+import { getMarketPrices } from '@/lib/lending/data/prices';
 import { hotels } from '@/data/hotels';
 
 function isLikelyXrplAddress(address: string): boolean {

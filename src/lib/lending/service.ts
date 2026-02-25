@@ -9,7 +9,7 @@
 import Decimal from 'decimal.js';
 import type { Client } from 'xrpl';
 import { Wallet } from 'xrpl';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getClient } from '../xrpl/client';
 import {
   getBackendWallet,
@@ -22,7 +22,8 @@ import {
   type SendTokenResult,
   type TransactionVerification,
 } from '../xrpl/tokens';
-import { getMarketById, getMarketPrices } from '../db/seed';
+import { getMarketById } from './data/markets';
+import { getMarketPrices } from './data/prices';
 import { db, markets } from '../db';
 import { upsertOnchainTransaction, isTransactionProcessed } from './onchain';
 import {
@@ -2859,6 +2860,14 @@ export async function processSupply(
     const supplyPosition = await getOrCreateSupplyPosition(senderAddress, marketId, 1);
     const updatedSupplyPosition = await addSupply(supplyPosition.id, amount, 1);
 
+    await db
+      .update(markets)
+      .set({
+        totalSupplied: sql`${markets.totalSupplied} + ${amount.toString()}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(markets.id, marketId));
+
     const supplyResult: SupplyResult = {
       marketId,
       supplyPositionId: updatedSupplyPosition.id,
@@ -3172,6 +3181,14 @@ export async function processWithdrawSupply(
         }
       }
     }
+
+    await db
+      .update(markets)
+      .set({
+        totalSupplied: sql`${markets.totalSupplied} - ${effectiveWithdrawAmount.toString()}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(markets.id, marketId));
 
     const withdrawResult: WithdrawSupplyResult = {
       marketId,

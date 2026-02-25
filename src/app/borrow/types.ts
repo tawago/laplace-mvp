@@ -12,6 +12,7 @@ export interface Market {
   loanTermMonths: number;
   totalSupplied?: number;
   totalBorrowed?: number;
+  availableLiquidity?: number;
   prices: {
     collateralPriceUsd: number;
     debtPriceUsd: number;

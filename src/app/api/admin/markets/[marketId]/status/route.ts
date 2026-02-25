@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { db, markets } from '@/lib/db';
-import { setMarketActiveStatus } from '@/lib/db/seed';
+import { setMarketActiveStatus } from '@/lib/lending/data/markets';
 
 interface RouteContext {
   params: Promise<{ marketId: string }>;

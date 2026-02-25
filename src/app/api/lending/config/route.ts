@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getAllActiveMarkets, getMarketPrices } from '@/lib/db/seed';
+import { getAllActiveMarkets } from '@/lib/lending/data/markets';
+import { getMarketPrices } from '@/lib/lending/data/prices';
 import { getIssuerAddress, getBackendAddress } from '@/lib/xrpl/wallet';
 import { getXrplExplorerUrl, getXrplNetwork, getXrplWsUrl } from '@/lib/config/runtime';
 import { getClient } from '@/lib/xrpl/client';
 import { cached, xrplCacheKeys } from '@/lib/xrpl/cache';
 import { parseAccountRootFlags } from 'xrpl';
 import { DEFAULT_LOAN_TERM_MONTHS } from '@/lib/lending/constants';
+import { getPoolMetrics } from '@/lib/lending/pool';
 
 function isTrustLineLockingEnabled(flags: number): boolean {
   return Boolean(parseAccountRootFlags(flags).lsfAllowTrustLineLocking);
@@ -53,10 +55,14 @@ export async function GET() {
 
     const marketsWithPrices = await Promise.all(
       markets.map(async (market) => {
-        const [prices, collateralEscrowEnabled] = await Promise.all([
+        const [prices, collateralEscrowEnabled, pool] = await Promise.all([
           getMarketPrices(market.id),
           getIssuerEscrowSupport(market.collateral_issuer),
+          getPoolMetrics(market.id),
         ]);
+
+        const availableLiquidity = pool?.availableLiquidity ?? Math.max(0, market.total_supplied - market.total_borrowed);
+
         return {
           id: market.id,
           name: market.name,
@@ -78,6 +84,7 @@ export async function GET() {
           loanTermMonths: DEFAULT_LOAN_TERM_MONTHS,
           totalSupplied: market.total_supplied,
           totalBorrowed: market.total_borrowed,
+          availableLiquidity,
           globalYieldIndex: market.global_yield_index,
           prices: prices
             ? {

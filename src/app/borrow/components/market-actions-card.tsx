@@ -63,8 +63,8 @@ export function MarketActionsCard({
   onWithdraw,
   onApplyRepayPreset,
 }: MarketActionsCardProps) {
-  const resolvedLiquidity = metrics?.availableLiquidity ?? market.totalSupplied ?? 0;
-  const poolSize = Number.isFinite(resolvedLiquidity) ? resolvedLiquidity : 0;
+  const resolvedLiquidity = metrics?.availableLiquidity ?? market.availableLiquidity ?? 0;
+  const poolSize = Number.isFinite(resolvedLiquidity) ? Math.max(0, resolvedLiquidity) : 0;
   const debtSymbol = getTokenSymbol(market.debtCurrency);
   const collateralSymbol = getTokenSymbol(market.collateralCurrency);
   const parsedDepositAmount = Number(depositAmount);

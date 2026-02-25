@@ -2,7 +2,7 @@ import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 
 import { db, supplyPositions, users, SupplyPosition as DbSupplyPosition } from '../db';
-import { getOrCreateUser } from '../db/seed';
+import { getOrCreateUser } from './data/users';
 import { calculateAccruedSupplyYield } from './calculations';
 import { SupplyPosition } from './types';
 

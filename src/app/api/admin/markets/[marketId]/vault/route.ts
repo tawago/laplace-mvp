@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { db, markets } from '@/lib/db';
-import { setMarketLoanBrokerConfig, setMarketSupplyVaultConfig } from '@/lib/db/seed';
+import { setMarketLoanBrokerConfig, setMarketSupplyVaultConfig } from '@/lib/lending/data/markets';
 import { createLoanBroker } from '@/lib/xrpl/loan';
 import { getClient } from '@/lib/xrpl/client';
 import { createSupplyVault, getSupplyVaultInfo } from '@/lib/xrpl/vault';

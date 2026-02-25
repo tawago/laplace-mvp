@@ -6,7 +6,7 @@
 
 import { eq, and, asc, desc, inArray, isNotNull } from 'drizzle-orm';
 import { db, users, positions, markets, onchainTransactions, Position as DbPosition } from '../db';
-import { getOrCreateUser } from '../db/seed';
+import { getOrCreateUser } from './data/users';
 import { PositionStatus, Position, PositionMetrics, Market } from './types';
 import {
   calculateInterestAccrued,

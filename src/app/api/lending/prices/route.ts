@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMarketPrices, updatePrice, getMarketById } from '@/lib/db/seed';
+import { getMarketById } from '@/lib/lending/data/markets';
+import { getMarketPrices, updatePrice } from '@/lib/lending/data/prices';
 
 /**
  * GET /api/lending/prices?marketId=...
