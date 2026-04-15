@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --experimental-https --port 3001",
+    "dev:backend-lending": "node scripts/dev-backend-lending.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
