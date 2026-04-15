@@ -14,14 +14,16 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-// Load environment variables from .env.local BEFORE importing db
-dotenv.config({ path: path.join(process.cwd(), '.env.local') });
+const envFilePath = process.env.ENV_FILE ?? '.env.local';
+
+// Load environment variables before importing db
+dotenv.config({ path: path.join(process.cwd(), envFilePath) });
 
 // Validate required env vars before importing db module
 if (!process.env.DATABASE_URL) {
   console.error('Error: DATABASE_URL not found in environment.');
   console.log('');
-  console.log('Please configure your Neon database connection string in .env.local:');
+  console.log(`Please configure your Neon database connection string in ${envFilePath}:`);
   console.log('DATABASE_URL=postgres://user:pass@host/database?sslmode=require');
   console.log('');
   console.log('Get your connection string from: https://console.neon.tech/');
@@ -29,7 +31,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 if (!process.env.ISSUER_ADDRESS) {
-  console.error('Error: ISSUER_ADDRESS not found in environment.');
+  console.error(`Error: ISSUER_ADDRESS not found in environment file ${envFilePath}.`);
   console.log('Please run setup-testnet.ts first to create wallets.');
   process.exit(1);
 }

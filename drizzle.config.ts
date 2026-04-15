@@ -1,11 +1,13 @@
 import { defineConfig } from 'drizzle-kit';
 import * as dotenv from 'dotenv';
 
+const envFilePath = process.env.ENV_FILE ?? '.env.local';
+
 // Load environment variables
-dotenv.config({ path: '.env.local' });
+dotenv.config({ path: envFilePath });
 
 if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL is required. Set it in .env.local');
+  throw new Error(`DATABASE_URL is required. Set it in ${envFilePath}`);
 }
 
 export default defineConfig({

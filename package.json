@@ -7,11 +7,18 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "vercel:env:branch-preview": "npx tsx scripts/set-vercel-branch-preview-env.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
+    "db:generate:backend-lending": "ENV_FILE=.env.backend_lending drizzle-kit generate",
+    "db:push:backend-lending": "ENV_FILE=.env.backend_lending drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "setup:testnet": "npx tsx scripts/setup-testnet.ts",
+    "setup:testnet:backend-lending": "ENV_FILE=.env.backend_lending npx tsx scripts/setup-testnet.ts",
     "setup:db": "npx tsx scripts/init-db.ts",
+    "setup:db:backend-lending": "ENV_FILE=.env.backend_lending npx tsx scripts/init-db.ts",
+    "wipe:db:full": "npx tsx scripts/wipe-db-full.ts",
+    "wipe:db:full:backend-lending": "ENV_FILE=.env.backend_lending npx tsx scripts/wipe-db-full.ts",
     "setup:all": "npm run setup:testnet && npm run setup:db"
   },
   "dependencies": {

@@ -6,7 +6,7 @@
  * 2. Enables rippling on the issuer account
  * 3. Creates trust lines from backend to issuer for all protocol tokens
  * 4. Issues initial protocol tokens to the backend wallet
- * 5. Automatically updates .env.local with the new credentials
+ * 5. Automatically updates the configured env file with the new credentials
  *
  * NOTE: This script does NOT initialize the database.
  * Run `npm run setup:db` separately to seed the database.
@@ -29,7 +29,7 @@ const INITIAL_SAIL_AMOUNT = '100000';
 const INITIAL_NYRA_AMOUNT = '100000';
 const INITIAL_RLUSD_AMOUNT = '100000';
 
-const ENV_FILE_PATH = path.join(process.cwd(), '.env.local');
+const ENV_FILE_PATH = path.join(process.cwd(), process.env.ENV_FILE ?? '.env.local');
 
 function checkExistingConfig(): boolean {
   if (!fs.existsSync(ENV_FILE_PATH)) {
@@ -156,13 +156,13 @@ async function main() {
 
   // Check for existing configuration
   if (checkExistingConfig() && !forceFlag) {
-    console.log('Existing wallet configuration found in .env.local');
+    console.log(`Existing wallet configuration found in ${ENV_FILE_PATH}`);
     console.log('');
     console.log('Running this script again will create NEW wallets and');
     console.log('overwrite your existing configuration.');
     console.log('');
     console.log('If you want to proceed, run with --force flag:');
-    console.log('  npx tsx scripts/setup-testnet.ts --force');
+    console.log(`  ENV_FILE=${process.env.ENV_FILE ?? '.env.local'} npx tsx scripts/setup-testnet.ts --force`);
     console.log('');
     process.exit(0);
   }
@@ -228,8 +228,8 @@ async function main() {
     );
     console.log();
 
-    // 5. Update .env.local
-    console.log('Updating .env.local...');
+    // 5. Update env file
+    console.log(`Updating ${ENV_FILE_PATH}...`);
     updateEnvFile({
       ISSUER_WALLET_SEED: issuerWallet.seed!,
       BACKEND_WALLET_SEED: backendWallet.seed!,
@@ -241,7 +241,7 @@ async function main() {
       NEXT_PUBLIC_TESTNET_URL: TESTNET_URL,
       NEXT_PUBLIC_TESTNET_EXPLORER: 'https://testnet.xrpl.org',
     });
-    console.log('.env.local updated');
+    console.log(`${ENV_FILE_PATH} updated`);
     console.log();
 
     // 6. Output summary
@@ -256,7 +256,7 @@ async function main() {
     console.log(`View on explorer: https://testnet.xrpl.org/accounts/${backendWallet.address}`);
     console.log();
     console.log('Next steps:');
-    console.log('  1. Configure DATABASE_URL in .env.local (Neon connection string)');
+    console.log(`  1. Configure DATABASE_URL in ${ENV_FILE_PATH} (Neon connection string)`);
     console.log('  2. Run: npm run setup:db');
     console.log('  3. Run: npm run dev');
 
