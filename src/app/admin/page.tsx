@@ -244,7 +244,7 @@ export default function AdminPage() {
       const response = await fetch(`/api/admin/markets/${marketId}/vault`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ createLoanBroker: false }),
+        body: JSON.stringify({ createLoanBroker: true }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
